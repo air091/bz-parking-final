@@ -7,6 +7,10 @@ const arduinoRouter = require("./routes/Arduino.routes.js");
 const sensorRouter = require("./routes/Sensor.routes.js");
 const parkingSlotRouter = require("./routes/ParkingSlot.routes.js");
 const userRouter = require("./routes/User.routes.js");
+const parkingActivityRouter = require("./routes/ParkingActivity.routes.js");
+const holdPaymentRouter = require("./routes/HoldPayment.routes.js");
+const parkingPaymentRouter = require("./routes/ParkingPayment.routes.js");
+const serviceRouter = require("./routes/Service.routes.js");
 
 // Import database connection
 const database = require("./bz_database/db.js");
@@ -24,6 +28,10 @@ app.use("/api/arduino", arduinoRouter);
 app.use("/api/sensor", sensorRouter);
 app.use("/api/parking-slot", parkingSlotRouter);
 app.use("/api/user", userRouter);
+app.use("/api/parking-activity", parkingActivityRouter);
+app.use("/api/hold-payment", holdPaymentRouter);
+app.use("/api/parking-payment", parkingPaymentRouter);
+app.use("/api/service", serviceRouter);
 
 // Root endpoint
 app.get("/", (req, res) => {
@@ -36,6 +44,10 @@ app.get("/", (req, res) => {
       sensor: "/api/sensor",
       parkingSlot: "/api/parking-slot",
       user: "/api/user",
+      parkingActivity: "/api/parking-activity",
+      holdPayment: "/api/hold-payment",
+      parkingPayment: "/api/parking-payment",
+      service: "/api/service",
     },
     timestamp: new Date().toISOString(),
   });
@@ -73,6 +85,16 @@ const startServer = async () => {
         "  Parking:     http://localhost:" + PORT + "/api/parking-slot"
       );
       console.log("  User:        http://localhost:" + PORT + "/api/user");
+      console.log(
+        "  Parking Activity: http://localhost:" + PORT + "/api/parking-activity"
+      );
+      console.log(
+        "  Hold Payment: http://localhost:" + PORT + "/api/hold-payment"
+      );
+      console.log(
+        "  Parking Payment: http://localhost:" + PORT + "/api/parking-payment"
+      );
+      console.log("  Service:     http://localhost:" + PORT + "/api/service");
     });
   } catch (error) {
     console.log("Failed to start server:", error.message);
