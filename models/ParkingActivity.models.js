@@ -223,6 +223,38 @@ class ParkingActivityModel {
     }
   }
 
+  // Internal: recalculate and update amount based on service and duration
+  static async recalcAmount(activityId) {
+    try {
+      // Compute amount using service rates:
+      // - <= 2 hours: amount = first_2_hrs
+      // - > 2 hours: amount = first_2_hrs + ceil((seconds-7200)/3600) * per_succ_hr
+      // If user has no service, keep 0.
+      const { results } = await parkingActivityDB.query(
+        `
+        UPDATE parking_activity pa
+        JOIN user u ON u.user_id = pa.user_id
+        LEFT JOIN service s ON s.service_id = u.service_id
+        SET pa.amount = CASE
+          WHEN pa.end_time IS NULL OR s.service_id IS NULL THEN 0
+          WHEN TIMESTAMPDIFF(SECOND, pa.start_time, pa.end_time) <= 7200
+            THEN s.first_2_hrs
+          ELSE
+            s.first_2_hrs
+            + CEIL( (TIMESTAMPDIFF(SECOND, pa.start_time, pa.end_time) - 7200) / 3600 )
+              * s.per_succ_hr
+        END
+        WHERE pa.act_id = ?
+      `,
+        [activityId]
+      );
+      return { success: true, affectedRows: results.affectedRows };
+    } catch (error) {
+      console.error("Error recalculating amount:", error.message);
+      return { success: false, error: error.message };
+    }
+  }
+
   // End parking activity
   static async endActivity(activityId, endTime = null) {
     try {
@@ -253,6 +285,9 @@ class ParkingActivityModel {
           error: "Failed to end parking activity",
         };
       }
+
+      // Recalculate amount now that end_time is set
+      await this.recalcAmount(activityId);
 
       const updatedActivity = await this.getById(activityId);
 
@@ -338,6 +373,16 @@ class ParkingActivityModel {
           success: false,
           error: "Parking activity not found or no changes made",
         };
+      }
+
+      // If after the update both start_time and end_time are present, recalc amount
+      const updatedActivityBefore = await this.getById(activityId);
+      if (
+        updatedActivityBefore.success &&
+        updatedActivityBefore.data.start_time &&
+        updatedActivityBefore.data.end_time
+      ) {
+        await this.recalcAmount(activityId);
       }
 
       const updatedActivity = await this.getById(activityId);

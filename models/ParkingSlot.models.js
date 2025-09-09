@@ -5,10 +5,14 @@ class ParkingSlotModel {
   static async getAll() {
     try {
       const { results } = await parkingDB.query(`
-        SELECT ps.*, s.sensor_type, s.status as sensor_status, a.ip_address, a.location as arduino_location
+        SELECT ps.*, 
+               s.sensor_type, s.status as sensor_status, 
+               a.ip_address, a.location as arduino_location,
+               svc.vehicle_type, svc.first_2_hrs, svc.per_succ_hr
         FROM parking_slot ps 
         LEFT JOIN sensor s ON ps.sensor_id = s.sensor_id 
         LEFT JOIN arduino a ON s.arduino_id = a.arduino_id 
+        LEFT JOIN service svc ON ps.service_id = svc.service_id
         ORDER BY ps.created_at DESC
       `);
       return {
@@ -30,10 +34,14 @@ class ParkingSlotModel {
     try {
       const { results } = await parkingDB.query(
         `
-        SELECT ps.*, s.sensor_type, s.status as sensor_status, a.ip_address, a.location as arduino_location
+        SELECT ps.*, 
+               s.sensor_type, s.status as sensor_status, 
+               a.ip_address, a.location as arduino_location,
+               svc.vehicle_type, svc.first_2_hrs, svc.per_succ_hr
         FROM parking_slot ps 
         LEFT JOIN sensor s ON ps.sensor_id = s.sensor_id 
         LEFT JOIN arduino a ON s.arduino_id = a.arduino_id 
+        LEFT JOIN service svc ON ps.service_id = svc.service_id
         WHERE ps.slot_id = ?
       `,
         [slotId]
@@ -64,10 +72,14 @@ class ParkingSlotModel {
     try {
       const { results } = await parkingDB.query(
         `
-        SELECT ps.*, s.sensor_type, s.status as sensor_status, a.ip_address, a.location as arduino_location
+        SELECT ps.*, 
+               s.sensor_type, s.status as sensor_status, 
+               a.ip_address, a.location as arduino_location,
+               svc.vehicle_type, svc.first_2_hrs, svc.per_succ_hr
         FROM parking_slot ps 
         LEFT JOIN sensor s ON ps.sensor_id = s.sensor_id 
         LEFT JOIN arduino a ON s.arduino_id = a.arduino_id 
+        LEFT JOIN service svc ON ps.service_id = svc.service_id
         WHERE ps.location = ? 
         ORDER BY ps.created_at DESC
       `,
@@ -93,10 +105,14 @@ class ParkingSlotModel {
     try {
       const { results } = await parkingDB.query(
         `
-        SELECT ps.*, s.sensor_type, s.status as sensor_status, a.ip_address, a.location as arduino_location
+        SELECT ps.*, 
+               s.sensor_type, s.status as sensor_status, 
+               a.ip_address, a.location as arduino_location,
+               svc.vehicle_type, svc.first_2_hrs, svc.per_succ_hr
         FROM parking_slot ps 
         LEFT JOIN sensor s ON ps.sensor_id = s.sensor_id 
         LEFT JOIN arduino a ON s.arduino_id = a.arduino_id 
+        LEFT JOIN service svc ON ps.service_id = svc.service_id
         WHERE ps.status = ? 
         ORDER BY ps.created_at DESC
       `,
@@ -122,10 +138,14 @@ class ParkingSlotModel {
     try {
       const { results } = await parkingDB.query(
         `
-        SELECT ps.*, s.sensor_type, s.status as sensor_status, a.ip_address, a.location as arduino_location
+        SELECT ps.*, 
+               s.sensor_type, s.status as sensor_status, 
+               a.ip_address, a.location as arduino_location,
+               svc.vehicle_type, svc.first_2_hrs, svc.per_succ_hr
         FROM parking_slot ps 
         LEFT JOIN sensor s ON ps.sensor_id = s.sensor_id 
         LEFT JOIN arduino a ON s.arduino_id = a.arduino_id 
+        LEFT JOIN service svc ON ps.service_id = svc.service_id
         WHERE ps.sensor_id = ? 
         ORDER BY ps.created_at DESC
       `,
@@ -146,6 +166,42 @@ class ParkingSlotModel {
     }
   }
 
+  // Get parking slots by service ID
+  static async getByServiceId(serviceId) {
+    try {
+      const { results } = await parkingDB.query(
+        `
+        SELECT ps.*, 
+               s.sensor_type, s.status as sensor_status, 
+               a.ip_address, a.location as arduino_location,
+               svc.vehicle_type, svc.first_2_hrs, svc.per_succ_hr
+        FROM parking_slot ps 
+        LEFT JOIN sensor s ON ps.sensor_id = s.sensor_id 
+        LEFT JOIN arduino a ON s.arduino_id = a.arduino_id 
+        LEFT JOIN service svc ON ps.service_id = svc.service_id
+        WHERE ps.service_id = ? 
+        ORDER BY ps.created_at DESC
+      `,
+        [serviceId]
+      );
+
+      return {
+        success: true,
+        data: results,
+        count: results.length,
+      };
+    } catch (error) {
+      console.error(
+        "Error getting parking slots by service ID:",
+        error.message
+      );
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  }
+
   // Create new parking slot
   static async create(slotData) {
     try {
@@ -158,7 +214,7 @@ class ParkingSlotModel {
         };
       }
 
-      const { location, status, sensor_id } = slotData;
+      const { location, status, sensor_id, service_id } = slotData;
 
       // Check if sensor exists (if provided)
       if (sensor_id) {
@@ -174,9 +230,23 @@ class ParkingSlotModel {
         }
       }
 
+      // Check if service exists (if provided)
+      if (service_id) {
+        const serviceExists = await parkingDB.query(
+          "SELECT service_id FROM service WHERE service_id = ?",
+          [service_id]
+        );
+        if (serviceExists.results.length === 0) {
+          return {
+            success: false,
+            error: "Service not found",
+          };
+        }
+      }
+
       const { results } = await parkingDB.query(
-        "INSERT INTO parking_slot (location, status, sensor_id) VALUES (?, ?, ?)",
-        [location, status || "maintenance", sensor_id]
+        "INSERT INTO parking_slot (location, status, sensor_id, service_id) VALUES (?, ?, ?, ?)",
+        [location, status || "maintenance", sensor_id, service_id]
       );
 
       // Get the created parking slot
@@ -353,6 +423,23 @@ class ParkingSlotModel {
         }
       }
 
+      // Check if service exists (if provided)
+      if (
+        updateData.service_id !== undefined &&
+        updateData.service_id !== null
+      ) {
+        const serviceExists = await parkingDB.query(
+          "SELECT service_id FROM service WHERE service_id = ?",
+          [updateData.service_id]
+        );
+        if (serviceExists.results.length === 0) {
+          return {
+            success: false,
+            error: "Service not found",
+          };
+        }
+      }
+
       // Build dynamic update query
       const updateFields = [];
       const updateValues = [];
@@ -370,6 +457,11 @@ class ParkingSlotModel {
       if (updateData.sensor_id !== undefined) {
         updateFields.push("sensor_id = ?");
         updateValues.push(updateData.sensor_id);
+      }
+
+      if (updateData.service_id !== undefined) {
+        updateFields.push("service_id = ?");
+        updateValues.push(updateData.service_id);
       }
 
       if (updateFields.length === 0) {
@@ -482,6 +574,13 @@ class ParkingSlotModel {
       }
     }
 
+    // Validate service_id if provided
+    if (data.service_id !== undefined && data.service_id !== null) {
+      if (isNaN(parseInt(data.service_id))) {
+        errors.push("Service ID must be a valid number");
+      }
+    }
+
     return {
       isValid: errors.length === 0,
       error: errors.join(", "),
@@ -499,6 +598,7 @@ class ParkingSlotModel {
           COUNT(CASE WHEN status = 'maintenance' THEN 1 END) as maintenance_slots,
           COUNT(DISTINCT location) as unique_locations,
           COUNT(DISTINCT sensor_id) as slots_with_sensors,
+          COUNT(DISTINCT service_id) as slots_with_services,
           MIN(created_at) as first_slot_created,
           MAX(created_at) as last_slot_created
         FROM parking_slot
@@ -516,11 +616,25 @@ class ParkingSlotModel {
         ORDER BY total_slots DESC
       `);
 
+      const serviceStats = await parkingDB.query(`
+        SELECT 
+          svc.vehicle_type,
+          COUNT(ps.slot_id) as total_slots,
+          COUNT(CASE WHEN ps.status = 'available' THEN 1 END) as available_slots,
+          COUNT(CASE WHEN ps.status = 'occupied' THEN 1 END) as occupied_slots,
+          COUNT(CASE WHEN ps.status = 'maintenance' THEN 1 END) as maintenance_slots
+        FROM service svc
+        LEFT JOIN parking_slot ps ON svc.service_id = ps.service_id
+        GROUP BY svc.service_id, svc.vehicle_type
+        ORDER BY total_slots DESC
+      `);
+
       return {
         success: true,
         data: {
           overview: results[0],
           locationBreakdown: locationStats.results,
+          serviceBreakdown: serviceStats.results,
         },
       };
     } catch (error) {

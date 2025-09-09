@@ -81,7 +81,7 @@ class UserModel {
   // Create new user
   static async create(userData) {
     try {
-      const { plate_number } = userData;
+      const { plate_number, service_id } = userData;
 
       // Check if plate number already exists
       const existingUser = await this.getByPlateNumber(plate_number);
@@ -93,8 +93,8 @@ class UserModel {
       }
 
       const { results } = await userDB.query(
-        `INSERT INTO user (plate_number) VALUES (?)`,
-        [plate_number]
+        `INSERT INTO user (plate_number, service_id) VALUES (?, ?)`,
+        [plate_number, service_id ?? null]
       );
 
       const newUser = await this.getById(results.insertId);
@@ -116,7 +116,7 @@ class UserModel {
   // Update user
   static async update(userId, userData) {
     try {
-      const { plate_number } = userData;
+      const { plate_number, service_id } = userData;
 
       // Check if user exists
       const existingUser = await this.getById(userId);
@@ -144,6 +144,10 @@ class UserModel {
       if (plate_number !== undefined) {
         updateFields.push("plate_number = ?");
         updateValues.push(plate_number);
+      }
+      if (service_id !== undefined) {
+        updateFields.push("service_id = ?");
+        updateValues.push(service_id ?? null);
       }
 
       if (updateFields.length === 0) {
@@ -239,6 +243,24 @@ class UserModel {
         success: false,
         error: error.message,
       };
+    }
+  }
+
+  // Get users by service_id
+  static async getByServiceId(serviceId) {
+    try {
+      const { results } = await userDB.query(
+        `SELECT * FROM user WHERE service_id = ? ORDER BY created_at DESC`,
+        [serviceId]
+      );
+      return {
+        success: true,
+        data: results,
+        count: results.length,
+      };
+    } catch (error) {
+      console.error("Error getting users by service_id:", error.message);
+      return { success: false, error: error.message };
     }
   }
 }

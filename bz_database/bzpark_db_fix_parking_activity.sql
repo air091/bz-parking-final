@@ -30,10 +30,11 @@ CREATE TABLE `parking_activity` (
   `duration` int GENERATED ALWAYS AS (timestampdiff(SECOND,`start_time`,`end_time`)) STORED,
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `amount` decimal(6,2) NOT NULL DEFAULT '0.00',
   PRIMARY KEY (`act_id`),
   KEY `user_id` (`user_id`),
   CONSTRAINT `parking_activity_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `user` (`user_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -42,6 +43,7 @@ CREATE TABLE `parking_activity` (
 
 LOCK TABLES `parking_activity` WRITE;
 /*!40000 ALTER TABLE `parking_activity` DISABLE KEYS */;
+INSERT INTO `parking_activity` (`act_id`, `user_id`, `start_time`, `end_time`, `created_at`, `updated_at`, `amount`) VALUES (1,1,'2025-09-06 18:32:58','2025-09-07 04:05:17','2025-09-06 18:32:58','2025-09-07 04:05:17',0.00),(2,3,'2025-09-07 04:01:48','2025-09-07 04:08:32','2025-09-07 04:01:48','2025-09-07 04:08:32',0.00);
 /*!40000 ALTER TABLE `parking_activity` ENABLE KEYS */;
 UNLOCK TABLES;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
@@ -54,4 +56,4 @@ UNLOCK TABLES;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2025-09-07  2:31:29
+-- Dump completed on 2025-09-09  0:57:18

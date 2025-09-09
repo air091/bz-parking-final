@@ -27,8 +27,11 @@ CREATE TABLE `user` (
   `plate_number` varchar(20) NOT NULL,
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`user_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+  `service_id` int DEFAULT NULL,
+  PRIMARY KEY (`user_id`),
+  KEY `service_id_fk` (`service_id`),
+  CONSTRAINT `service_id_fk` FOREIGN KEY (`service_id`) REFERENCES `service` (`service_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -37,6 +40,7 @@ CREATE TABLE `user` (
 
 LOCK TABLES `user` WRITE;
 /*!40000 ALTER TABLE `user` DISABLE KEYS */;
+INSERT INTO `user` VALUES (1,'AK4 1023','2025-09-06 15:43:04','2025-09-06 16:01:15',NULL),(3,'ABS 4223','2025-09-06 16:08:53','2025-09-06 16:08:53',NULL),(4,'PLDT 1233','2025-09-08 16:09:24','2025-09-08 16:09:24',NULL);
 /*!40000 ALTER TABLE `user` ENABLE KEYS */;
 UNLOCK TABLES;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
@@ -49,4 +53,4 @@ UNLOCK TABLES;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2025-09-06 23:15:52
+-- Dump completed on 2025-09-09  0:45:38

@@ -29,10 +29,13 @@ CREATE TABLE `parking_slot` (
   `sensor_id` int DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `service_id` int DEFAULT NULL,
   PRIMARY KEY (`slot_id`),
   KEY `sensor_id` (`sensor_id`),
+  KEY `fk_service` (`service_id`),
+  CONSTRAINT `fk_service` FOREIGN KEY (`service_id`) REFERENCES `service` (`service_id`),
   CONSTRAINT `parking_slot_ibfk_1` FOREIGN KEY (`sensor_id`) REFERENCES `sensor` (`sensor_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=9 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -41,6 +44,7 @@ CREATE TABLE `parking_slot` (
 
 LOCK TABLES `parking_slot` WRITE;
 /*!40000 ALTER TABLE `parking_slot` DISABLE KEYS */;
+INSERT INTO `parking_slot` VALUES (1,'GF','maintenance',1,'2025-09-06 10:49:03','2025-09-06 10:49:03',NULL),(2,'GF','available',7,'2025-09-06 10:49:30','2025-09-07 16:47:29',NULL),(3,'GF','maintenance',2,'2025-09-06 13:38:49','2025-09-06 13:42:46',NULL),(4,'GF','maintenance',3,'2025-09-06 13:44:03','2025-09-06 13:44:03',NULL),(5,'GF','maintenance',4,'2025-09-06 13:44:37','2025-09-06 13:44:37',NULL),(6,'BSMT','maintenance',5,'2025-09-06 13:44:53','2025-09-06 13:44:53',NULL),(7,'BSMT','occupied',6,'2025-09-06 13:45:02','2025-09-07 16:49:13',NULL);
 /*!40000 ALTER TABLE `parking_slot` ENABLE KEYS */;
 UNLOCK TABLES;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
@@ -53,4 +57,4 @@ UNLOCK TABLES;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2025-09-05 21:46:48
+-- Dump completed on 2025-09-08  1:13:19

@@ -228,11 +228,12 @@ class ParkingSlotController {
   // Create new parking slot
   static async createParkingSlot(req, res) {
     try {
-      const { location, status, sensor_id } = req.body;
+      const { location, status, sensor_id, service_id } = req.body;
       console.log("POST /api/parking-slot - Creating new parking slot", {
         location,
         status,
         sensor_id,
+        service_id,
       });
 
       if (!req.body || Object.keys(req.body).length === 0) {
@@ -248,6 +249,7 @@ class ParkingSlotController {
         location,
         status: status || "maintenance",
         sensor_id,
+        service_id,
       });
 
       if (result.success) {
@@ -268,6 +270,55 @@ class ParkingSlotController {
       }
     } catch (error) {
       console.error("Error in createParkingSlot controller:", error.message);
+      res.status(500).json({
+        success: false,
+        message: "Internal server error",
+        error: error.message,
+        timestamp: new Date().toISOString(),
+      });
+    }
+  }
+
+  // Get parking slots by service ID
+  static async getParkingSlotsByService(req, res) {
+    try {
+      const { serviceId } = req.params;
+      console.log(
+        `GET /api/parking-slot/service/${serviceId} - Fetching parking slots by service ID`
+      );
+
+      if (!serviceId || isNaN(parseInt(serviceId))) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid service ID provided",
+          error: "Service ID must be a valid number",
+          timestamp: new Date().toISOString(),
+        });
+      }
+
+      const result = await ParkingSlotModel.getByServiceId(parseInt(serviceId));
+
+      if (result.success) {
+        res.status(200).json({
+          success: true,
+          message: "Parking slots retrieved successfully",
+          data: result.data,
+          count: result.count,
+          timestamp: new Date().toISOString(),
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          message: "Failed to retrieve parking slots",
+          error: result.error,
+          timestamp: new Date().toISOString(),
+        });
+      }
+    } catch (error) {
+      console.error(
+        "Error in getParkingSlotsByService controller:",
+        error.message
+      );
       res.status(500).json({
         success: false,
         message: "Internal server error",
