@@ -11,19 +11,50 @@ const AdminUsers = () => {
 
   const [editingUser, setEditingUser] = useState(null);
   const [editPlate, setEditPlate] = useState("");
+  const [editServiceId, setEditServiceId] = useState(""); // "" | number
 
   const [showCreate, setShowCreate] = useState(false);
   const [createPlate, setCreatePlate] = useState("");
+  const [createServiceId, setCreateServiceId] = useState(""); // "" | number
 
   const [deletingId, setDeletingId] = useState(null);
 
+  const [services, setServices] = useState([]);
+  const [selectedService, setSelectedService] = useState(""); // "" = all
+
   const apiBase = "/api/user";
+  const serviceApi = "/api/service";
+
+  const getServiceLabel = (id) => {
+    if (id === null || id === undefined || id === "") return "-";
+    const numId = Number(id);
+    const svc = services.find((s) => s.service_id === numId);
+    return svc ? `${svc.vehicle_type} (#${numId})` : `Service #${numId}`;
+  };
+
+  const loadServices = async () => {
+    try {
+      const res = await fetch(serviceApi);
+      const data = await res.json();
+      if (!res.ok)
+        throw new Error(
+          data?.message || data?.error || "Failed to load services"
+        );
+      setServices(Array.isArray(data?.data) ? data.data : []);
+    } catch (e) {
+      setError((prev) => prev || e.message);
+    }
+  };
 
   const load = async () => {
     try {
       setLoading(true);
       setError("");
-      const res = await fetch(apiBase);
+      let url = apiBase;
+      if (selectedService) {
+        url = `${apiBase}/service/${selectedService}`;
+      }
+      const res = await fetch(url);
       const data = await res.json();
       if (!res.ok)
         throw new Error(data?.message || data?.error || "Failed to load users");
@@ -49,15 +80,31 @@ const AdminUsers = () => {
       const data = await res.json();
       if (!res.ok)
         throw new Error(data?.message || data?.error || "Search failed");
-      setUsers(Array.isArray(data?.data) ? data.data : []);
+      let list = Array.isArray(data?.data) ? data.data : [];
+      if (selectedService) {
+        const svcId = Number(selectedService);
+        list = list.filter((u) => Number(u.service_id) === svcId);
+      }
+      setUsers(list);
     } catch (e) {
       setError(e.message);
     }
   };
 
   useEffect(() => {
+    loadServices();
     load();
   }, []);
+
+  useEffect(() => {
+    // reload when service filter changes
+    if (!search.trim()) {
+      load();
+    } else {
+      // re-apply search with the new filter
+      searchUsers();
+    }
+  }, [selectedService]);
 
   const autoHideMessage = () => {
     setTimeout(() => setMessage(""), 3000);
@@ -67,7 +114,10 @@ const AdminUsers = () => {
     try {
       setError("");
       setMessage("");
-      const body = { plate_number: createPlate.trim() };
+      const body = {
+        plate_number: createPlate.trim(),
+        service_id: createServiceId === "" ? null : Number(createServiceId),
+      };
       const res = await fetch(apiBase, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -80,6 +130,7 @@ const AdminUsers = () => {
       autoHideMessage();
       setShowCreate(false);
       setCreatePlate("");
+      setCreateServiceId("");
       await load();
     } catch (e) {
       setError(e.message);
@@ -89,6 +140,9 @@ const AdminUsers = () => {
   const startEdit = (u) => {
     setEditingUser(u);
     setEditPlate(u.plate_number || "");
+    setEditServiceId(
+      u.service_id === null || u.service_id === undefined ? "" : u.service_id
+    );
   };
 
   const updateUser = async () => {
@@ -99,7 +153,10 @@ const AdminUsers = () => {
       const res = await fetch(`${apiBase}/${editingUser.user_id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ plate_number: editPlate.trim() }),
+        body: JSON.stringify({
+          plate_number: editPlate.trim(),
+          service_id: editServiceId === "" ? null : Number(editServiceId),
+        }),
       });
       const data = await res.json();
       if (!res.ok)
@@ -108,6 +165,7 @@ const AdminUsers = () => {
       autoHideMessage();
       setEditingUser(null);
       setEditPlate("");
+      setEditServiceId("");
       await load();
     } catch (e) {
       setError(e.message);
@@ -152,7 +210,14 @@ const AdminUsers = () => {
         </span>
       </div>
 
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+      <div
+        style={{
+          display: "flex",
+          gap: 8,
+          flexWrap: "wrap",
+          alignItems: "center",
+        }}
+      >
         <div style={{ display: "flex", gap: 4 }}>
           <button
             onClick={() => setActiveTab("table")}
@@ -182,43 +247,93 @@ const AdminUsers = () => {
           </button>
         </div>
 
-        <div style={{ display: "flex", gap: 6 }}>
-          <input
-            ref={searchInputRef}
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              // ensure the field keeps focus even after re-render
-              requestAnimationFrame(() => searchInputRef.current?.focus());
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") searchUsers();
-            }}
-            placeholder="Search by plate number"
-            style={{
-              padding: "6px 8px",
-              border: "1px solid #ddd",
-              borderRadius: 4,
-              minWidth: 220,
-            }}
-          />
-          <button
-            type="button"
-            onClick={searchUsers}
-            style={{
-              padding: "6px 10px",
-              borderRadius: 4,
-              border: "none",
-              background: "#007bff",
-              color: "white",
-              cursor: "pointer",
-            }}
-          >
-            Search
-          </button>
+        <div
+          style={{
+            display: "flex",
+            gap: 6,
+            alignItems: "center",
+            flexWrap: "wrap",
+          }}
+        >
+          <div style={{ display: "flex", gap: 6 }}>
+            <input
+              ref={searchInputRef}
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                requestAnimationFrame(() => searchInputRef.current?.focus());
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") searchUsers();
+              }}
+              placeholder="Search by plate number"
+              style={{
+                padding: "6px 8px",
+                border: "1px solid #ddd",
+                borderRadius: 4,
+                minWidth: 220,
+              }}
+            />
+            <button
+              type="button"
+              onClick={searchUsers}
+              style={{
+                padding: "6px 10px",
+                borderRadius: 4,
+                border: "none",
+                background: "#007bff",
+                color: "white",
+                cursor: "pointer",
+              }}
+            >
+              Search
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setSearch("");
+                if (!selectedService) {
+                  load();
+                } else {
+                  searchUsers();
+                }
+              }}
+              style={{
+                padding: "6px 10px",
+                borderRadius: 4,
+                border: "1px solid #ddd",
+                background: "white",
+                cursor: "pointer",
+              }}
+            >
+              Reset
+            </button>
+          </div>
+
+          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <label style={{ fontSize: 12, color: "#555" }}>Service:</label>
+            <select
+              value={selectedService}
+              onChange={(e) => setSelectedService(e.target.value)}
+              style={{
+                padding: "6px 8px",
+                border: "1px solid #ddd",
+                borderRadius: 4,
+              }}
+            >
+              <option value="">All</option>
+              {services.map((s) => (
+                <option key={s.service_id} value={s.service_id}>
+                  {s.vehicle_type} (#{s.service_id})
+                </option>
+              ))}
+            </select>
+          </div>
+
           <button
             type="button"
             onClick={() => {
+              setSelectedService("");
               setSearch("");
               load();
             }}
@@ -230,24 +345,24 @@ const AdminUsers = () => {
               cursor: "pointer",
             }}
           >
-            Reset
+            Clear Filters
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowCreate(true)}
+            style={{
+              padding: "6px 10px",
+              borderRadius: 4,
+              border: "none",
+              background: "#28a745",
+              color: "white",
+              cursor: "pointer",
+            }}
+          >
+            + New User
           </button>
         </div>
-
-        <button
-          type="button"
-          onClick={() => setShowCreate(true)}
-          style={{
-            padding: "6px 10px",
-            borderRadius: 4,
-            border: "none",
-            background: "#28a745",
-            color: "white",
-            cursor: "pointer",
-          }}
-        >
-          + New User
-        </button>
       </div>
     </div>
   );
@@ -283,6 +398,15 @@ const AdminUsers = () => {
               }}
             >
               Created
+            </th>
+            <th
+              style={{
+                textAlign: "left",
+                borderBottom: "1px solid #ddd",
+                padding: "8px 4px",
+              }}
+            >
+              Service
             </th>
             <th
               style={{
@@ -339,6 +463,14 @@ const AdminUsers = () => {
                   padding: "6px 4px",
                 }}
               >
+                {getServiceLabel(u.service_id)}
+              </td>
+              <td
+                style={{
+                  borderBottom: "1px solid #f0f0f0",
+                  padding: "6px 4px",
+                }}
+              >
                 <div style={{ display: "flex", gap: 4 }}>
                   <button
                     type="button"
@@ -376,7 +508,7 @@ const AdminUsers = () => {
           ))}
           {users.length === 0 && !loading && (
             <tr>
-              <td colSpan={4} style={{ padding: 12, color: "#666" }}>
+              <td colSpan={5} style={{ padding: 12, color: "#666" }}>
                 No users found.
               </td>
             </tr>
@@ -428,6 +560,9 @@ const AdminUsers = () => {
               <p style={{ margin: "2px 0", color: "#666", fontSize: 14 }}>
                 Created:{" "}
                 {u.created_at ? new Date(u.created_at).toLocaleString() : "-"}
+              </p>
+              <p style={{ margin: "2px 0", color: "#666", fontSize: 14 }}>
+                Service: {getServiceLabel(u.service_id)}
               </p>
             </div>
             <div style={{ display: "flex", gap: 4 }}>
@@ -521,12 +656,42 @@ const AdminUsers = () => {
             />
           </div>
 
+          <div style={{ marginBottom: 16 }}>
+            <label
+              style={{
+                display: "block",
+                marginBottom: 8,
+                fontWeight: "bold",
+              }}
+            >
+              Service:
+            </label>
+            <select
+              value={editServiceId}
+              onChange={(e) => setEditServiceId(e.target.value)}
+              style={{
+                width: "100%",
+                padding: 8,
+                border: "1px solid #ddd",
+                borderRadius: 4,
+              }}
+            >
+              <option value="">(None)</option>
+              {services.map((s) => (
+                <option key={s.service_id} value={s.service_id}>
+                  {s.vehicle_type} (#{s.service_id})
+                </option>
+              ))}
+            </select>
+          </div>
+
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
             <button
               type="button"
               onClick={() => {
                 setEditingUser(null);
                 setEditPlate("");
+                setEditServiceId("");
               }}
               style={{
                 padding: "6px 10px",
@@ -607,12 +772,42 @@ const AdminUsers = () => {
             />
           </div>
 
+          <div style={{ marginBottom: 16 }}>
+            <label
+              style={{
+                display: "block",
+                marginBottom: 8,
+                fontWeight: "bold",
+              }}
+            >
+              Service:
+            </label>
+            <select
+              value={createServiceId}
+              onChange={(e) => setCreateServiceId(e.target.value)}
+              style={{
+                width: "100%",
+                padding: 8,
+                border: "1px solid #ddd",
+                borderRadius: 4,
+              }}
+            >
+              <option value="">(None)</option>
+              {services.map((s) => (
+                <option key={s.service_id} value={s.service_id}>
+                  {s.vehicle_type} (#{s.service_id})
+                </option>
+              ))}
+            </select>
+          </div>
+
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
             <button
               type="button"
               onClick={() => {
                 setShowCreate(false);
                 setCreatePlate("");
+                setCreateServiceId("");
               }}
               style={{
                 padding: "6px 10px",
