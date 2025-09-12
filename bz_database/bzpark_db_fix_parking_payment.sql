@@ -26,7 +26,6 @@ CREATE TABLE `parking_payment` (
   `parking_payment_id` int NOT NULL AUTO_INCREMENT,
   `user_id` int NOT NULL,
   `act_id` int NOT NULL,
-  `amount` decimal(6,2) NOT NULL DEFAULT '0.00',
   `payment_method` enum('gcash','paymaya','cash') DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -56,4 +55,4 @@ UNLOCK TABLES;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2025-09-07 18:33:33
+-- Dump completed on 2025-09-12  8:11:08

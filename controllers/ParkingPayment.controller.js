@@ -195,59 +195,6 @@ class ParkingPaymentController {
     }
   }
 
-  // Get parking payments by amount range
-  static async getParkingPaymentsByAmountRange(req, res) {
-    try {
-      const { minAmount, maxAmount } = req.query;
-
-      if (!minAmount || !maxAmount) {
-        return res.status(400).json({
-          success: false,
-          message: "Minimum and maximum amount are required",
-        });
-      }
-
-      const min = parseFloat(minAmount);
-      const max = parseFloat(maxAmount);
-
-      if (isNaN(min) || isNaN(max) || min < 0 || max < 0 || min > max) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Invalid amount range. Min and max must be valid numbers and min <= max",
-        });
-      }
-
-      const result = await ParkingPaymentModel.getByAmountRange(min, max);
-
-      if (!result.success) {
-        return res.status(500).json({
-          success: false,
-          message: "Failed to retrieve parking payments",
-          error: result.error,
-        });
-      }
-
-      res.status(200).json({
-        success: true,
-        message: "Parking payments retrieved successfully",
-        data: result.data,
-        count: result.count,
-        amountRange: { minAmount: min, maxAmount: max },
-      });
-    } catch (error) {
-      console.error(
-        "Error in getParkingPaymentsByAmountRange controller:",
-        error.message
-      );
-      res.status(500).json({
-        success: false,
-        message: "Internal server error",
-        error: error.message,
-      });
-    }
-  }
-
   // Get parking payments by date range
   static async getParkingPaymentsByDateRange(req, res) {
     try {
@@ -313,7 +260,7 @@ class ParkingPaymentController {
   // Create parking payment
   static async createParkingPayment(req, res) {
     try {
-      const { user_id, act_id, amount, payment_method } = req.body;
+      const { user_id, act_id, payment_method } = req.body;
 
       if (!user_id || isNaN(user_id)) {
         return res.status(400).json({
@@ -325,18 +272,6 @@ class ParkingPaymentController {
         return res.status(400).json({
           success: false,
           message: "Valid act_id is required",
-        });
-      }
-      if (amount === undefined) {
-        return res.status(400).json({
-          success: false,
-          message: "Amount is required",
-        });
-      }
-      if (isNaN(amount) || amount <= 0 || amount > 9999.99) {
-        return res.status(400).json({
-          success: false,
-          message: "Amount must be a valid number between 0.01 and 9999.99",
         });
       }
       if (
@@ -352,7 +287,6 @@ class ParkingPaymentController {
       const payload = {
         user_id: parseInt(user_id),
         act_id: parseInt(act_id),
-        amount: parseFloat(amount),
         payment_method,
       };
 
@@ -384,7 +318,7 @@ class ParkingPaymentController {
   static async updateParkingPayment(req, res) {
     try {
       const { id } = req.params;
-      const { user_id, act_id, amount, payment_method } = req.body;
+      const { user_id, act_id, payment_method } = req.body;
 
       if (!id || isNaN(id)) {
         return res.status(400).json({
@@ -406,15 +340,6 @@ class ParkingPaymentController {
         });
       }
       if (
-        amount !== undefined &&
-        (isNaN(amount) || amount <= 0 || amount > 9999.99)
-      ) {
-        return res.status(400).json({
-          success: false,
-          message: "Amount must be a valid number between 0.01 and 9999.99",
-        });
-      }
-      if (
         payment_method !== undefined &&
         !["gcash", "paymaya", "cash"].includes(payment_method)
       ) {
@@ -427,7 +352,6 @@ class ParkingPaymentController {
       const updateData = {};
       if (user_id !== undefined) updateData.user_id = parseInt(user_id);
       if (act_id !== undefined) updateData.act_id = parseInt(act_id);
-      if (amount !== undefined) updateData.amount = parseFloat(amount);
       if (payment_method !== undefined)
         updateData.payment_method = payment_method;
 

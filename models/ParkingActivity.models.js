@@ -308,7 +308,7 @@ class ParkingActivityModel {
   // Update parking activity
   static async update(activityId, activityData) {
     try {
-      const { user_id, start_time, end_time } = activityData;
+      const { user_id, start_time, end_time, is_paid } = activityData;
 
       // Check if activity exists
       const existingActivity = await this.getById(activityId);
@@ -350,6 +350,11 @@ class ParkingActivityModel {
       if (end_time !== undefined) {
         updateFields.push("end_time = ?");
         updateValues.push(end_time);
+      }
+
+      if (is_paid !== undefined) {
+        updateFields.push("is_paid = ?");
+        updateValues.push(is_paid); // expect 0 or 1 already normalized by controller
       }
 
       if (updateFields.length === 0) {

@@ -361,7 +361,7 @@ class ParkingActivityController {
   static async updateParkingActivity(req, res) {
     try {
       const { id } = req.params;
-      const { user_id, start_time, end_time } = req.body;
+      const { user_id, start_time, end_time, is_paid } = req.body;
 
       if (!id || isNaN(id)) {
         return res.status(400).json({
@@ -392,11 +392,28 @@ class ParkingActivityController {
         });
       }
 
+      let normalizedPaid;
+      if (is_paid !== undefined) {
+        const v =
+          typeof is_paid === "string" ? is_paid.toLowerCase().trim() : is_paid;
+        if (v === 1 || v === "1" || v === true || v === "true")
+          normalizedPaid = 1;
+        else if (v === 0 || v === "0" || v === false || v === "false")
+          normalizedPaid = 0;
+        else {
+          return res.status(400).json({
+            success: false,
+            message: "is_paid must be 0/1 or true/false",
+          });
+        }
+      }
+
       const updateData = {};
       if (user_id !== undefined) updateData.user_id = parseInt(user_id);
       if (start_time !== undefined)
         updateData.start_time = new Date(start_time);
       if (end_time !== undefined) updateData.end_time = new Date(end_time);
+      if (normalizedPaid !== undefined) updateData.is_paid = normalizedPaid;
 
       if (Object.keys(updateData).length === 0) {
         return res.status(400).json({

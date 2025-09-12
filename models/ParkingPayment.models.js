@@ -117,32 +117,6 @@ class ParkingPaymentModel {
     }
   }
 
-  // Get by amount range
-  static async getByAmountRange(minAmount, maxAmount) {
-    try {
-      const { results } = await parkingPaymentDB.query(
-        `
-        SELECT 
-          pp.*,
-          u.plate_number
-        FROM parking_payment pp
-        LEFT JOIN user u ON pp.user_id = u.user_id
-        WHERE pp.amount BETWEEN ? AND ?
-        ORDER BY pp.created_at DESC
-      `,
-        [minAmount, maxAmount]
-      );
-
-      return { success: true, data: results, count: results.length };
-    } catch (error) {
-      console.error(
-        "Error getting parking payments by amount range:",
-        error.message
-      );
-      return { success: false, error: error.message };
-    }
-  }
-
   // Get by date range (by created_at)
   static async getByDateRange(startDate, endDate) {
     try {
@@ -172,21 +146,13 @@ class ParkingPaymentModel {
   // Create
   static async create(data) {
     try {
-      const { user_id, act_id, amount, payment_method } = data;
+      const { user_id, act_id, payment_method } = data;
 
       // Validate payment method
       if (!["gcash", "paymaya", "cash"].includes(payment_method)) {
         return {
           success: false,
           error: "Payment method must be 'gcash', 'paymaya', or 'cash'",
-        };
-      }
-
-      // Validate amount - decimal(6,2) -> up to 9999.99
-      if (amount <= 0 || amount > 9999.99) {
-        return {
-          success: false,
-          error: "Amount must be between 0.01 and 9999.99",
         };
       }
 
@@ -209,8 +175,8 @@ class ParkingPaymentModel {
       }
 
       const { results } = await parkingPaymentDB.query(
-        `INSERT INTO parking_payment (user_id, act_id, amount, payment_method) VALUES (?, ?, ?, ?)`,
-        [user_id, act_id, amount, payment_method]
+        `INSERT INTO parking_payment (user_id, act_id, payment_method) VALUES (?, ?, ?)`,
+        [user_id, act_id, payment_method]
       );
 
       const created = await this.getById(results.insertId);
@@ -228,7 +194,7 @@ class ParkingPaymentModel {
   // Update
   static async update(parkingPaymentId, data) {
     try {
-      const { user_id, act_id, amount, payment_method } = data;
+      const { user_id, act_id, payment_method } = data;
 
       // Ensure exists
       const existing = await this.getById(parkingPaymentId);
@@ -267,13 +233,6 @@ class ParkingPaymentModel {
         };
       }
 
-      if (amount !== undefined && (amount <= 0 || amount > 9999.99)) {
-        return {
-          success: false,
-          error: "Amount must be between 0.01 and 9999.99",
-        };
-      }
-
       const updateFields = [];
       const updateValues = [];
 
@@ -284,10 +243,6 @@ class ParkingPaymentModel {
       if (act_id !== undefined) {
         updateFields.push("act_id = ?");
         updateValues.push(act_id);
-      }
-      if (amount !== undefined) {
-        updateFields.push("amount = ?");
-        updateValues.push(amount);
       }
       if (payment_method !== undefined) {
         updateFields.push("payment_method = ?");
@@ -356,16 +311,9 @@ class ParkingPaymentModel {
       const { results } = await parkingPaymentDB.query(`
         SELECT 
           COUNT(*) as total_payments,
-          SUM(amount) as total_amount,
-          AVG(amount) as average_amount,
-          MIN(amount) as min_amount,
-          MAX(amount) as max_amount,
           COUNT(CASE WHEN payment_method = 'gcash' THEN 1 END) as gcash_count,
           COUNT(CASE WHEN payment_method = 'paymaya' THEN 1 END) as paymaya_count,
-          COUNT(CASE WHEN payment_method = 'cash' THEN 1 END) as cash_count,
-          SUM(CASE WHEN payment_method = 'gcash' THEN amount ELSE 0 END) as gcash_total,
-          SUM(CASE WHEN payment_method = 'paymaya' THEN amount ELSE 0 END) as paymaya_total,
-          SUM(CASE WHEN payment_method = 'cash' THEN amount ELSE 0 END) as cash_total
+          COUNT(CASE WHEN payment_method = 'cash' THEN 1 END) as cash_count
         FROM parking_payment
       `);
 

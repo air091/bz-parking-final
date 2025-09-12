@@ -19,10 +19,6 @@ router.get(
   ParkingPaymentController.getParkingPaymentsByPaymentMethod
 );
 router.get(
-  "/amount-range",
-  ParkingPaymentController.getParkingPaymentsByAmountRange
-);
-router.get(
   "/date-range",
   ParkingPaymentController.getParkingPaymentsByDateRange
 );
