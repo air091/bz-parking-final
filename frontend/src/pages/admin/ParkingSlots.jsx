@@ -11,6 +11,10 @@ const AdminParkingSlots = () => {
   const [editingSlot, setEditingSlot] = useState(null);
   const [editMode, setEditMode] = useState("service"); // "service" or "sensor"
 
+  // Add auto-refresh state
+  const [autoRefresh, setAutoRefresh] = useState(false);
+  const [refreshInterval, setRefreshInterval] = useState(5000);
+
   const load = async () => {
     try {
       setLoading(true);
@@ -58,6 +62,19 @@ const AdminParkingSlots = () => {
     loadServices();
     loadSensors();
   }, []);
+
+  // Add auto-refresh effect
+  useEffect(() => {
+    let interval;
+    if (autoRefresh) {
+      interval = setInterval(() => {
+        load();
+      }, refreshInterval);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [autoRefresh, refreshInterval]);
 
   const updateSlot = async (slotId, updates) => {
     try {
@@ -647,22 +664,74 @@ const AdminParkingSlots = () => {
           marginBottom: 16,
         }}
       >
-        <h1 style={{ margin: 0 }}>Parking Slots</h1>
-        <button
-          onClick={load}
-          disabled={loading}
-          style={{
-            padding: "8px 16px",
-            background: "#007bff",
-            color: "white",
-            border: "none",
-            borderRadius: "4px",
-            cursor: loading ? "not-allowed" : "pointer",
-            opacity: loading ? 0.6 : 1,
-          }}
-        >
-          {loading ? "Loading..." : "Refresh"}
-        </button>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <h1 style={{ margin: 0 }}>Parking Slots</h1>
+          {autoRefresh && (
+            <span
+              style={{
+                fontSize: 12,
+                color: "#28a745",
+                background: "#e6ffed",
+                padding: "2px 6px",
+                borderRadius: 4,
+                border: "1px solid #badbcc",
+              }}
+            >
+              Auto-refresh ON
+            </span>
+          )}
+        </div>
+
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          {/* Auto-refresh controls */}
+          <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+            <button
+              onClick={() => setAutoRefresh(!autoRefresh)}
+              style={{
+                padding: "4px 8px",
+                fontSize: 12,
+                border: "1px solid #ccc",
+                borderRadius: 4,
+                background: autoRefresh ? "#28a745" : "#fff",
+                color: autoRefresh ? "#fff" : "#333",
+                cursor: "pointer",
+              }}
+            >
+              {autoRefresh ? "Stop Auto" : "Auto Refresh"}
+            </button>
+            <select
+              value={refreshInterval}
+              onChange={(e) => setRefreshInterval(Number(e.target.value))}
+              style={{
+                padding: "4px 8px",
+                fontSize: 12,
+                border: "1px solid #ccc",
+                borderRadius: 4,
+              }}
+            >
+              <option value={2000}>2s</option>
+              <option value={5000}>5s</option>
+              <option value={10000}>10s</option>
+              <option value={30000}>30s</option>
+            </select>
+          </div>
+
+          <button
+            onClick={load}
+            disabled={loading}
+            style={{
+              padding: "8px 16px",
+              background: "#007bff",
+              color: "white",
+              border: "none",
+              borderRadius: "4px",
+              cursor: loading ? "not-allowed" : "pointer",
+              opacity: loading ? 0.6 : 1,
+            }}
+          >
+            {loading ? "Loading..." : "Refresh"}
+          </button>
+        </div>
       </div>
 
       {error && (

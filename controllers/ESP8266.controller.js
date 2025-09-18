@@ -148,47 +148,29 @@ class ESP8266Controller {
   // Enhanced method to update sensor ranges automatically
   static async updateSensorRangesFromDistances(ipAddress, distanceData) {
     try {
-      // First try to find Arduino device by IP
-      const arduinoResult = await ESP8266Controller.getArduinoByIp(ipAddress);
-
       let sensors = [];
       let updates = [];
 
-      if (arduinoResult.success && arduinoResult.data) {
-        // Arduino device found in database - use database mapping
-        const arduinoId = arduinoResult.data.arduino_id;
-        const sensorsResult = await ESP8266Controller.getArduinoSensors(
-          arduinoId
+      // Skip Arduino detection - use direct sensor ID mapping immediately
+      const sensorMapping = ESP8266Controller.getSensorIdsForIp(ipAddress);
+      if (sensorMapping.sensor1Id || sensorMapping.sensor2Id) {
+        // Create sensor objects for direct mapping
+        if (sensorMapping.sensor1Id) {
+          sensors.push({ sensor_id: sensorMapping.sensor1Id });
+        }
+        if (sensorMapping.sensor2Id) {
+          sensors.push({ sensor_id: sensorMapping.sensor2Id });
+        }
+        console.log(
+          `📡 Using direct sensor mapping for ${ipAddress}: Sensor1=${sensorMapping.sensor1Id}, Sensor2=${sensorMapping.sensor2Id}`
         );
-
-        if (sensorsResult.success && sensorsResult.data.length > 0) {
-          sensors = sensorsResult.data;
-          console.log(
-            `📡 Found Arduino device ${arduinoId} with ${sensors.length} sensors`
-          );
-        }
-      } else {
-        // Arduino device not found - use direct sensor ID mapping
-        const sensorMapping = ESP8266Controller.getSensorIdsForIp(ipAddress);
-        if (sensorMapping.sensor1Id || sensorMapping.sensor2Id) {
-          // Create mock sensor objects for direct mapping
-          if (sensorMapping.sensor1Id) {
-            sensors.push({ sensor_id: sensorMapping.sensor1Id });
-          }
-          if (sensorMapping.sensor2Id) {
-            sensors.push({ sensor_id: sensorMapping.sensor2Id });
-          }
-          console.log(
-            `📡 Using direct sensor mapping for ${ipAddress}: Sensor1=${sensorMapping.sensor1Id}, Sensor2=${sensorMapping.sensor2Id}`
-          );
-        }
       }
 
       if (sensors.length === 0) {
         console.log(`❌ No sensors found for IP ${ipAddress}`);
         return {
           success: false,
-          message: `No sensors found for IP ${ipAddress}. Please add this ESP8266 to the Arduino database or configure sensor mapping.`,
+          message: `No sensors found for IP ${ipAddress}. Please configure sensor mapping.`,
         };
       }
 

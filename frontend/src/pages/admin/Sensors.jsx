@@ -1,5 +1,113 @@
 import React, { useEffect, useState } from "react";
 
+// Add this outside the component, at the top of the file
+let globalAutoDetectionInterval = null;
+let globalAutoDetectionActive = false;
+let globalEspBaseUrl = "";
+let globalDetectionInterval = 3000;
+
+// Global function for auto-detection
+const globalAutoDetection = async () => {
+  if (!globalEspBaseUrl) return;
+
+  try {
+    // Call ESP8266 API directly
+    const res = await fetch(`${globalEspBaseUrl}/distance/both`, {
+      method: "GET",
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      console.log("ESP8266 direct response:", data);
+
+      // Parse the result string to extract distance values
+      const result = data.result;
+
+      if (result && result !== "TIMEOUT") {
+        let distance1 = null;
+        let distance2 = null;
+
+        // Parse different formats that Arduino might send
+        // Format: "DISTANCES: S1=15 IN, S2=22 IN"
+        const distancesMatch = result.match(
+          /DISTANCES:\s*S1=(\d+)\s*IN,\s*S2=(\d+)\s*IN/i
+        );
+        if (distancesMatch) {
+          distance1 = parseInt(distancesMatch[1]);
+          distance2 = parseInt(distancesMatch[2]);
+        }
+
+        // Format: "DISTANCE1: 15 IN"
+        const distance1Match = result.match(/DISTANCE1:\s*(\d+)\s*IN/i);
+        if (distance1Match) {
+          distance1 = parseInt(distance1Match[1]);
+        }
+
+        // Format: "DISTANCE2: 22 IN"
+        const distance2Match = result.match(/DISTANCE2:\s*(\d+)\s*IN/i);
+        if (distance2Match) {
+          distance2 = parseInt(distance2Match[1]);
+        }
+
+        // Format: Plain numbers "15,22" or "15 22"
+        if (!distance1 && !distance2) {
+          const numbers = result.match(/(\d+)/g);
+          if (numbers && numbers.length >= 2) {
+            distance1 = parseInt(numbers[0]);
+            distance2 = parseInt(numbers[1]);
+          }
+        }
+
+        console.log(
+          `Parsed distances: Sensor1=${distance1}, Sensor2=${distance2}`
+        );
+
+        if (distance1 !== null || distance2 !== null) {
+          // Update sensors in database
+          const updatePromises = [];
+
+          if (distance1 !== null) {
+            updatePromises.push(
+              fetch("/api/sensor/7", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  sensor_range: distance1,
+                  status: "working",
+                }),
+              })
+            );
+          }
+
+          if (distance2 !== null) {
+            updatePromises.push(
+              fetch("/api/sensor/6", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  sensor_range: distance2,
+                  status: "working",
+                }),
+              })
+            );
+          }
+
+          if (updatePromises.length > 0) {
+            await Promise.all(updatePromises);
+            console.log("✅ Updated sensor ranges from ESP8266 API");
+          }
+        }
+      } else {
+        console.log("ESP8266 returned TIMEOUT or empty response");
+      }
+    } else {
+      console.log(`ESP8266 API error: ${res.status} ${res.statusText}`);
+    }
+  } catch (e) {
+    console.log("ESP8266 API fetch error:", e.message);
+  }
+};
+
 const AdminSensors = () => {
   const [sensors, setSensors] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -34,7 +142,7 @@ const AdminSensors = () => {
     }
   };
 
-  // Automatic distance detection function
+  // Automatic distance detection function with multiple fallback approaches
   const fetchDistancesAutomatically = async () => {
     if (!espBaseUrl) return;
 
@@ -48,25 +156,323 @@ const AdminSensors = () => {
         headers["X-Arduino-IP"] = targetIp;
       }
 
-      const res = await fetch(`/api/esp8266/distance/both`, {
-        method: "GET",
-        headers,
-      });
-      const data = await res.json();
+      // Try multiple approaches to get distance data
+      let distanceData = null;
 
-      if (res.ok && data.success) {
-        setEsp8266Data(data.data);
-        // Auto-hide success message after 2 seconds
-        setTimeout(() => {
-          setMessage("");
-        }, 2000);
+      // Approach 1: Try /distance/both
+      try {
+        const res1 = await fetch(`/api/esp8266/distance/both`, {
+          method: "GET",
+          headers,
+        });
 
-        // Reload sensors to show updated ranges
-        setTimeout(load, 500);
+        if (res1.ok) {
+          const text1 = await res1.text();
+          if (text1 && text1.trim() !== "") {
+            const data1 = JSON.parse(text1);
+            if (data1 && data1.success && data1.data) {
+              distanceData = data1.data;
+              console.log(
+                "✅ Got distance data from /distance/both:",
+                distanceData
+              );
+            }
+          }
+        }
+      } catch (e) {
+        console.log("Approach 1 failed:", e.message);
+      }
+
+      // Approach 2: Try individual distance endpoints
+      if (!distanceData) {
+        try {
+          const [res1, res2] = await Promise.all([
+            fetch(`/api/esp8266/distance/1`, { method: "GET", headers }),
+            fetch(`/api/esp8266/distance/2`, { method: "GET", headers }),
+          ]);
+
+          let distance1 = null;
+          let distance2 = null;
+
+          if (res1.ok) {
+            const text1 = await res1.text();
+            if (text1 && text1.trim() !== "") {
+              const data1 = JSON.parse(text1);
+              if (data1 && data1.success && data1.data) {
+                distance1 = data1.data.distance || data1.data.distance1;
+              }
+            }
+          }
+
+          if (res2.ok) {
+            const text2 = await res2.text();
+            if (text2 && text2.trim() !== "") {
+              const data2 = JSON.parse(text2);
+              if (data2 && data2.success && data2.data) {
+                distance2 = data2.data.distance || data2.data.distance2;
+              }
+            }
+          }
+
+          if (distance1 !== null || distance2 !== null) {
+            distanceData = { distance1, distance2 };
+            console.log(
+              "✅ Got distance data from individual endpoints:",
+              distanceData
+            );
+          }
+        } catch (e) {
+          console.log("Approach 2 failed:", e.message);
+        }
+      }
+
+      // Approach 3: Use sensor server as fallback
+      if (!distanceData) {
+        try {
+          const res = await fetch("http://localhost:8000/api/sensor", {
+            method: "GET",
+          });
+
+          if (res.ok) {
+            const data = await res.json();
+            if (data && (data.sensor1In !== null || data.sensor2In !== null)) {
+              distanceData = {
+                distance1: data.sensor1In,
+                distance2: data.sensor2In,
+              };
+              console.log(
+                "✅ Got distance data from sensor server:",
+                distanceData
+              );
+            }
+          }
+        } catch (e) {
+          console.log("Approach 3 failed:", e.message);
+        }
+      }
+
+      // Update database if we have distance data
+      if (distanceData) {
+        setEsp8266Data(distanceData);
+
+        // Update sensors in database
+        const updatePromises = [];
+
+        if (
+          distanceData.distance1 !== null &&
+          distanceData.distance1 !== undefined
+        ) {
+          updatePromises.push(
+            fetch("/api/sensor/7", {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                sensor_range: Math.round(distanceData.distance1),
+                status: "working",
+              }),
+            })
+          );
+        }
+
+        if (
+          distanceData.distance2 !== null &&
+          distanceData.distance2 !== undefined
+        ) {
+          updatePromises.push(
+            fetch("/api/sensor/6", {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                sensor_range: Math.round(distanceData.distance2),
+                status: "working",
+              }),
+            })
+          );
+        }
+
+        if (updatePromises.length > 0) {
+          await Promise.all(updatePromises);
+          console.log("✅ Updated sensor ranges in database");
+          // Reload sensors to show updated ranges
+          setTimeout(load, 500);
+        }
+      } else {
+        console.log("❌ No distance data available from any source");
       }
     } catch (e) {
-      // Silent error handling for automatic detection
       console.log("Auto distance detection error:", e.message);
+    }
+  };
+
+  // Simplified automatic distance detection using sensor server
+  const fetchDistancesFromSensorServer = async () => {
+    try {
+      // Fetch from local sensor server (sensorServer.js)
+      const res = await fetch("http://localhost:8000/api/sensor", {
+        method: "GET",
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        console.log("Sensor server data:", data);
+
+        if (data && (data.sensor1In !== null || data.sensor2In !== null)) {
+          // Update sensors in database using the sensor server data
+          const updatePromises = [];
+
+          if (data.sensor1In !== null && data.sensor1In !== undefined) {
+            updatePromises.push(
+              fetch("/api/sensor/7", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  sensor_range: Math.round(data.sensor1In),
+                  status: "working",
+                }),
+              })
+            );
+          }
+
+          if (data.sensor2In !== null && data.sensor2In !== undefined) {
+            updatePromises.push(
+              fetch("/api/sensor/6", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  sensor_range: Math.round(data.sensor2In),
+                  status: "working",
+                }),
+              })
+            );
+          }
+
+          if (updatePromises.length > 0) {
+            await Promise.all(updatePromises);
+            console.log("✅ Updated sensor ranges from sensor server");
+            // Reload sensors to show updated ranges
+            setTimeout(load, 500);
+          }
+        }
+      } else {
+        console.log(`Sensor server error: ${res.status} ${res.statusText}`);
+      }
+    } catch (e) {
+      console.log("Sensor server fetch error:", e.message);
+    }
+  };
+
+  // Test sensor server directly
+  const testSensorServer = async () => {
+    try {
+      const res = await fetch("http://localhost:8000/api/sensor");
+      const data = await res.json();
+      console.log("Sensor server data:", data);
+    } catch (e) {
+      console.log("Sensor server test failed:", e.message);
+    }
+  };
+
+  // Direct ESP8266 API approach (bypass sensor server)
+  const fetchDistancesFromESP8266Direct = async () => {
+    if (!espBaseUrl) return;
+
+    try {
+      // Call ESP8266 API directly
+      const res = await fetch(`${espBaseUrl}/distance/both`, {
+        method: "GET",
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        console.log("ESP8266 direct response:", data);
+
+        // Parse the result string to extract distance values
+        const result = data.result;
+
+        if (result && result !== "TIMEOUT") {
+          let distance1 = null;
+          let distance2 = null;
+
+          // Parse different formats that Arduino might send
+          // Format: "DISTANCES: S1=15 IN, S2=22 IN"
+          const distancesMatch = result.match(
+            /DISTANCES:\s*S1=(\d+)\s*IN,\s*S2=(\d+)\s*IN/i
+          );
+          if (distancesMatch) {
+            distance1 = parseInt(distancesMatch[1]);
+            distance2 = parseInt(distancesMatch[2]);
+          }
+
+          // Format: "DISTANCE1: 15 IN"
+          const distance1Match = result.match(/DISTANCE1:\s*(\d+)\s*IN/i);
+          if (distance1Match) {
+            distance1 = parseInt(distance1Match[1]);
+          }
+
+          // Format: "DISTANCE2: 22 IN"
+          const distance2Match = result.match(/DISTANCE2:\s*(\d+)\s*IN/i);
+          if (distance2Match) {
+            distance2 = parseInt(distance2Match[1]);
+          }
+
+          // Format: Plain numbers "15,22" or "15 22"
+          if (!distance1 && !distance2) {
+            const numbers = result.match(/(\d+)/g);
+            if (numbers && numbers.length >= 2) {
+              distance1 = parseInt(numbers[0]);
+              distance2 = parseInt(numbers[1]);
+            }
+          }
+
+          console.log(
+            `Parsed distances: Sensor1=${distance1}, Sensor2=${distance2}`
+          );
+
+          if (distance1 !== null || distance2 !== null) {
+            // Update sensors in database
+            const updatePromises = [];
+
+            if (distance1 !== null) {
+              updatePromises.push(
+                fetch("/api/sensor/7", {
+                  method: "PUT",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    sensor_range: distance1,
+                    status: "working",
+                  }),
+                })
+              );
+            }
+
+            if (distance2 !== null) {
+              updatePromises.push(
+                fetch("/api/sensor/6", {
+                  method: "PUT",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    sensor_range: distance2,
+                    status: "working",
+                  }),
+                })
+              );
+            }
+
+            if (updatePromises.length > 0) {
+              await Promise.all(updatePromises);
+              console.log("✅ Updated sensor ranges from ESP8266 API");
+              // Reload sensors to show updated ranges
+              setTimeout(load, 500);
+            }
+          }
+        } else {
+          console.log("ESP8266 returned TIMEOUT or empty response");
+        }
+      } else {
+        console.log(`ESP8266 API error: ${res.status} ${res.statusText}`);
+      }
+    } catch (e) {
+      console.log("ESP8266 API fetch error:", e.message);
     }
   };
 
@@ -90,16 +496,49 @@ const AdminSensors = () => {
   // Auto-refresh effect for automatic distance detection
   useEffect(() => {
     let interval;
-    if (autoDistanceDetection && espBaseUrl) {
-      // Initial fetch
-      fetchDistancesAutomatically();
 
+    // Check if auto-detection was running before (from localStorage)
+    const wasAutoDetecting =
+      localStorage.getItem("autoDistanceDetection") === "true";
+    const savedInterval = localStorage.getItem("distanceDetectionInterval");
+    const savedEspBaseUrl = localStorage.getItem("espBaseUrl");
+
+    if (wasAutoDetecting && savedEspBaseUrl) {
+      // Restore the auto-detection state
+      setAutoDistanceDetection(true);
+      setDistanceDetectionInterval(
+        savedInterval ? parseInt(savedInterval) : 3000
+      );
+      setEspBaseUrl(savedEspBaseUrl);
+
+      // Start the interval immediately
+      interval = setInterval(
+        () => {
+          fetchDistancesFromESP8266Direct();
+        },
+        savedInterval ? parseInt(savedInterval) : 3000
+      );
+    } else if (autoDistanceDetection && espBaseUrl) {
+      // Normal auto-detection start
       interval = setInterval(() => {
-        fetchDistancesAutomatically();
+        fetchDistancesFromESP8266Direct();
       }, distanceDetectionInterval);
     }
+
     return () => {
-      if (interval) clearInterval(interval);
+      if (interval) {
+        // Save the current state to localStorage before clearing
+        localStorage.setItem(
+          "autoDistanceDetection",
+          autoDistanceDetection.toString()
+        );
+        localStorage.setItem(
+          "distanceDetectionInterval",
+          distanceDetectionInterval.toString()
+        );
+        localStorage.setItem("espBaseUrl", espBaseUrl);
+        clearInterval(interval);
+      }
     };
   }, [autoDistanceDetection, distanceDetectionInterval, espBaseUrl]);
 
@@ -226,6 +665,62 @@ const AdminSensors = () => {
       setError(e.message);
     }
   };
+
+  // Function to start global auto-detection
+  const startGlobalAutoDetection = () => {
+    if (globalAutoDetectionInterval) {
+      clearInterval(globalAutoDetectionInterval);
+    }
+
+    globalEspBaseUrl = espBaseUrl;
+    globalDetectionInterval = distanceDetectionInterval;
+    globalAutoDetectionActive = true;
+
+    // Start the global interval
+    globalAutoDetectionInterval = setInterval(
+      globalAutoDetection,
+      globalDetectionInterval
+    );
+
+    // Also run it immediately
+    globalAutoDetection();
+
+    console.log("🌐 Global auto-detection started");
+  };
+
+  // Function to stop global auto-detection
+  const stopGlobalAutoDetection = () => {
+    if (globalAutoDetectionInterval) {
+      clearInterval(globalAutoDetectionInterval);
+      globalAutoDetectionInterval = null;
+    }
+    globalAutoDetectionActive = false;
+    console.log("🌐 Global auto-detection stopped");
+  };
+
+  // Update the button click handler
+  const handleAutoDetectionToggle = () => {
+    if (autoDistanceDetection) {
+      stopGlobalAutoDetection();
+      setAutoDistanceDetection(false);
+    } else {
+      if (!espBaseUrl) {
+        alert("Please set ESP Base URL first");
+        return;
+      }
+      setAutoDistanceDetection(true);
+      startGlobalAutoDetection();
+    }
+  };
+
+  // Check if auto-detection is already running when component mounts
+  useEffect(() => {
+    if (globalAutoDetectionActive) {
+      setAutoDistanceDetection(true);
+      setEspBaseUrl(globalEspBaseUrl);
+      setDistanceDetectionInterval(globalDetectionInterval);
+    }
+  }, []);
 
   return (
     <div>
@@ -361,7 +856,7 @@ const AdminSensors = () => {
         <div style={{ marginBottom: 12 }}>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <button
-              onClick={() => setAutoDistanceDetection(!autoDistanceDetection)}
+              onClick={handleAutoDetectionToggle}
               disabled={!espBaseUrl}
               style={{
                 padding: "6px 12px",

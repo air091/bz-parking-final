@@ -199,6 +199,24 @@ const serialPort = new SerialPort(
 
 const parser = serialPort.pipe(new ReadlineParser({ delimiter: "\n" }));
 
+// Add this after the serial port configuration
+serialPort.on("open", () => {
+  console.log(
+    `✅ Serial port ${COM_PORT} opened successfully @ ${BAUD_RATE} baud`
+  );
+  console.log(" Waiting for data from ESP8266...");
+});
+
+serialPort.on("data", (data) => {
+  console.log(`📡 Raw data received: "${data.toString()}"`);
+});
+
+// Add this to see if there are any connection errors
+serialPort.on("error", (error) => {
+  console.error(`❌ Serial port error: ${error.message}`);
+  console.error(`❌ Make sure ESP8266 is connected to ${COM_PORT}`);
+});
+
 // Per-sensor rate limiting
 const lastSentValue = {};
 const lastSentAt = {};
@@ -305,11 +323,16 @@ parser.on("data", (data) => {
     const raw = String(data || "");
     const cleaned = raw.trim();
 
+    // Add debug logging
+    console.log(`📡 Raw serial data received: "${raw}"`);
+    console.log(`📡 Cleaned data: "${cleaned}"`);
+
     // Optional S1:/S2: override (still supported)
     let targetOverride = null;
     const m = cleaned.match(/^\s*S([12])\s*:\s*(.+)$/i);
     const payload = m ? m[2].trim() : cleaned;
     if (m) {
+      console.log(`📡 Found S1/S2 override: S${m[1]} = ${payload}`);
       // Use database mapping for S1/S2 override
       if (AUTO_DETECT_SENSORS && sensorMapping.size > 0) {
         const devices = Array.from(sensorMapping.values());
@@ -329,12 +352,14 @@ parser.on("data", (data) => {
     if (
       /^arduino ready|^waiting for|^received command|^error:/i.test(payload)
     ) {
+      console.log(`📡 Ignoring status line: "${payload}"`);
       return;
     }
 
     // Case 1: plain number → route to appropriate sensor
     if (/^\d+(\.\d+)?$/.test(payload)) {
       const valueIn = Math.round(Number(payload));
+      console.log(`📡 Processing plain number: ${valueIn}`);
 
       // reset alternation if long gap between plain numbers
       const now = Date.now();
@@ -375,6 +400,7 @@ parser.on("data", (data) => {
     if (dm) {
       const which = dm[1] === "1" ? 1 : 2;
       const num = Math.round(Number(dm[2]));
+      console.log(`📡 Processing DISTANCE${which}: ${num}`);
 
       let targetId = null;
       if (AUTO_DETECT_SENSORS && sensorMapping.size > 0) {
@@ -406,6 +432,7 @@ parser.on("data", (data) => {
     if (dm) {
       const n1 = Math.round(Number(dm[1]));
       const n2 = Math.round(Number(dm[2]));
+      console.log(`📡 Processing DISTANCES: S1=${n1}, S2=${n2}`);
 
       if (AUTO_DETECT_SENSORS && sensorMapping.size > 0) {
         const devices = Array.from(sensorMapping.values());
@@ -443,7 +470,9 @@ parser.on("data", (data) => {
 
     // Case 2: JSON → existing key-based routing (only if looks like JSON)
     if (/^[\[{]/.test(payload)) {
+      console.log(`📡 Processing JSON: ${payload}`);
       const parsed = JSON.parse(payload);
+      console.log(`📡 Parsed JSON:`, parsed);
       for (const [key, val] of Object.entries(parsed)) {
         if (val == null || !isFinite(val)) continue;
         const valueIn = Math.round(Number(val));
@@ -464,6 +493,7 @@ parser.on("data", (data) => {
     }
 
     // Unknown/unhandled line → ignore quietly to avoid noise
+    console.log(`📡 Unknown/unhandled line: "${payload}"`);
   } catch (error) {
     // Only log true parsing errors we expected (e.g., malformed JSON we tried to parse)
     console.error("Parse error:", error.message);
