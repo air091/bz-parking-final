@@ -1338,6 +1338,334 @@ const AdminSensors = () => {
     loadArduinos();
   }, []);
 
+  // State for editing sensor
+  const [editingSensor, setEditingSensor] = useState(null);
+  const [showEditForm, setShowEditForm] = useState(false);
+  const [sensorFormData, setSensorFormData] = useState({
+    sensor_type: "",
+    arduino_id: "",
+    sensor_range: "",
+    status: "working",
+  });
+
+  // Function to handle edit sensor
+  const handleEditSensor = (sensor) => {
+    setEditingSensor(sensor);
+    setSensorFormData({
+      sensor_type: sensor.sensor_type,
+      arduino_id: sensor.arduino_id,
+      sensor_range: sensor.sensor_range,
+      status: sensor.status,
+    });
+    setShowEditForm(true);
+  };
+
+  // Function to handle form submission for editing sensor
+  const handleSensorFormSubmit = async (e) => {
+    e.preventDefault();
+    if (!editingSensor) return;
+
+    try {
+      setError("");
+      setMessage("");
+
+      // If setting to maintenance, also set sensor_range to 0
+      const payload = { ...sensorFormData };
+      if (sensorFormData.status === "maintenance") {
+        payload.sensor_range = 0;
+      }
+
+      const res = await fetch(`/api/sensor/${editingSensor.sensor_id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok)
+        throw new Error(data?.message || data?.error || "Update failed");
+      setMessage("Sensor updated successfully");
+
+      // Auto-hide success message after 3 seconds
+      setTimeout(() => {
+        setMessage("");
+      }, 3000);
+
+      await load();
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  // Add function to render edit sensor modal
+  const renderEditSensorModal = () => {
+    if (!editingSensor && !showEditForm) return null;
+
+    return (
+      <div
+        style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: "rgba(0,0,0,0.5)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 1000,
+        }}
+      >
+        <div
+          style={{
+            background: "white",
+            padding: 24,
+            borderRadius: "8px",
+            minWidth: 450,
+            maxWidth: 600,
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: 16,
+            }}
+          >
+            <h3 style={{ margin: 0 }}>
+              Edit Sensor #{editingSensor?.sensor_id}
+            </h3>
+            <button
+              onClick={() => {
+                setEditingSensor(null);
+                setShowEditForm(false);
+                setSensorFormData({
+                  sensor_type: "",
+                  arduino_id: "",
+                  sensor_range: "",
+                  status: "working",
+                });
+              }}
+              style={{
+                padding: "4px 8px",
+                background: "#6c757d",
+                color: "white",
+                border: "none",
+                borderRadius: "4px",
+                cursor: "pointer",
+              }}
+            >
+              ✕
+            </button>
+          </div>
+
+          <form onSubmit={handleSensorFormSubmit}>
+            <div style={{ marginBottom: 16 }}>
+              <label
+                style={{
+                  display: "block",
+                  marginBottom: 8,
+                  fontWeight: "bold",
+                }}
+              >
+                Sensor Type:
+              </label>
+              <input
+                type="text"
+                value={sensorFormData.sensor_type}
+                onChange={(e) =>
+                  setSensorFormData({
+                    ...sensorFormData,
+                    sensor_type: e.target.value,
+                  })
+                }
+                placeholder="e.g., Ultrasonic, Infrared"
+                required
+                style={{
+                  width: "100%",
+                  padding: "8px",
+                  border: "1px solid #ddd",
+                  borderRadius: "4px",
+                }}
+              />
+            </div>
+
+            <div style={{ marginBottom: 16 }}>
+              <label
+                style={{
+                  display: "block",
+                  marginBottom: 8,
+                  fontWeight: "bold",
+                }}
+              >
+                Arduino Connection:
+              </label>
+              <select
+                value={sensorFormData.arduino_id}
+                onChange={(e) =>
+                  setSensorFormData({
+                    ...sensorFormData,
+                    arduino_id: e.target.value,
+                  })
+                }
+                required
+                style={{
+                  width: "100%",
+                  padding: "8px",
+                  border: "1px solid #ddd",
+                  borderRadius: "4px",
+                }}
+              >
+                <option value="">Select Arduino</option>
+                {arduinos.map((arduino) => (
+                  <option key={arduino.arduino_id} value={arduino.arduino_id}>
+                    Arduino #{arduino.arduino_id} - {arduino.location} (
+                    {arduino.ip_address})
+                  </option>
+                ))}
+              </select>
+              <div style={{ fontSize: 12, color: "#6c757d", marginTop: 4 }}>
+                Current: Arduino #{editingSensor?.arduino_id}
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 16 }}>
+              <label
+                style={{
+                  display: "block",
+                  marginBottom: 8,
+                  fontWeight: "bold",
+                }}
+              >
+                Sensor Range (inches):
+              </label>
+              <input
+                type="number"
+                value={sensorFormData.sensor_range}
+                onChange={(e) =>
+                  setSensorFormData({
+                    ...sensorFormData,
+                    sensor_range: e.target.value,
+                  })
+                }
+                placeholder="0"
+                min="0"
+                style={{
+                  width: "100%",
+                  padding: "8px",
+                  border: "1px solid #ddd",
+                  borderRadius: "4px",
+                }}
+              />
+            </div>
+
+            <div style={{ marginBottom: 20 }}>
+              <label
+                style={{
+                  display: "block",
+                  marginBottom: 8,
+                  fontWeight: "bold",
+                }}
+              >
+                Status:
+              </label>
+              <select
+                value={sensorFormData.status}
+                onChange={(e) =>
+                  setSensorFormData({
+                    ...sensorFormData,
+                    status: e.target.value,
+                  })
+                }
+                style={{
+                  width: "100%",
+                  padding: "8px",
+                  border: "1px solid #ddd",
+                  borderRadius: "4px",
+                }}
+              >
+                <option value="working">Working</option>
+                <option value="maintenance">Maintenance</option>
+              </select>
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                justifyContent: "space-between",
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      "Are you sure you want to delete this sensor?"
+                    )
+                  ) {
+                    deleteSensor(editingSensor.sensor_id);
+                    setEditingSensor(null);
+                    setShowEditForm(false);
+                  }
+                }}
+                style={{
+                  padding: "8px 16px",
+                  background: "#dc3545",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "4px",
+                  cursor: "pointer",
+                }}
+              >
+                Delete Sensor
+              </button>
+
+              <div style={{ display: "flex", gap: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingSensor(null);
+                    setShowEditForm(false);
+                    setSensorFormData({
+                      sensor_type: "",
+                      arduino_id: "",
+                      sensor_range: "",
+                      status: "working",
+                    });
+                  }}
+                  style={{
+                    padding: "8px 16px",
+                    background: "#6c757d",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "4px",
+                    cursor: "pointer",
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  style={{
+                    padding: "8px 16px",
+                    background: "#007bff",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "4px",
+                    cursor: "pointer",
+                  }}
+                >
+                  Update Sensor
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div>
       <div
@@ -1432,7 +1760,7 @@ const AdminSensors = () => {
         </div>
       </div>
 
-      {/* Connected Devices on Hotspot Section - Updated */}
+      {/* Arduino Devices Section */}
       <div
         style={{
           background: "#f8f9fa",
@@ -2004,39 +2332,18 @@ const AdminSensors = () => {
                 <td style={{ padding: 12, borderBottom: "1px solid #dee2e6" }}>
                   <div style={{ display: "flex", gap: 4 }}>
                     <button
-                      onClick={() =>
-                        updateSensor(sensor.sensor_id, {
-                          status:
-                            sensor.status === "working"
-                              ? "maintenance"
-                              : "working",
-                        })
-                      }
+                      onClick={() => handleEditSensor(sensor)}
                       style={{
                         padding: "4px 8px",
-                        border: "1px solid #007bff",
+                        border: "1px solid #28a745",
                         borderRadius: 4,
-                        background: "#007bff",
+                        background: "#28a745",
                         color: "white",
                         cursor: "pointer",
                         fontSize: 12,
                       }}
                     >
-                      Toggle Status
-                    </button>
-                    <button
-                      onClick={() => deleteSensor(sensor.sensor_id)}
-                      style={{
-                        padding: "4px 8px",
-                        border: "1px solid #dc3545",
-                        borderRadius: 4,
-                        background: "#dc3545",
-                        color: "white",
-                        cursor: "pointer",
-                        fontSize: 12,
-                      }}
-                    >
-                      Delete
+                      Edit
                     </button>
                   </div>
                 </td>
@@ -2069,6 +2376,9 @@ const AdminSensors = () => {
           </div>
         )}
       </div>
+
+      {/* Edit Sensor Modal */}
+      {renderEditSensorModal()}
     </div>
   );
 };
