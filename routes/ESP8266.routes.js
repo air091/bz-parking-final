@@ -11,4 +11,7 @@ router.get("/distance/1", ESP8266Controller.getDistance1);
 router.get("/distance/2", ESP8266Controller.getDistance2);
 router.get("/distance/both", ESP8266Controller.getBothDistances);
 
+// New route for manual sensor range updates
+router.post("/update-sensor-ranges", ESP8266Controller.updateSensorRanges);
+
 module.exports = router;

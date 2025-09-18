@@ -1,10 +1,10 @@
 // sensorServer.js
+// Enhanced version with database integration for auto-detection
 // .env variables (create a .env file next to this file):
-// SENSOR_ID=7
-// SENSOR_ID2=8        # optional
 // BACKEND_URL=http://localhost:8888
 // COM_PORT=COM5
 // BAUD_RATE=9600
+// AUTO_DETECT_SENSORS=true  // New: Enable auto-detection from database
 
 require("dotenv").config();
 const express = require("express");
@@ -18,13 +18,12 @@ const app = express();
 app.use(cors());
 const localApiPort = 8000;
 
-const SENSOR_ID1 = parseInt(process.env.SENSOR_ID1 || "0", 10);
-const SENSOR_ID2 = parseInt(process.env.SENSOR_ID2 || "0", 10); // optional
 const BACKEND_URL = (
   process.env.BACKEND_URL || "http://localhost:8888"
 ).replace(/\/+$/, "");
 const COM_PORT = process.env.COM_PORT || "COM5";
 const BAUD_RATE = parseInt(process.env.BAUD_RATE || "9600", 10);
+const AUTO_DETECT_SENSORS = process.env.AUTO_DETECT_SENSORS === "true";
 
 // Reuse HTTP connections for speed
 const httpAgent = new http.Agent({
@@ -38,16 +37,144 @@ const httpsAgent = new https.Agent({
   keepAliveMsecs: 10000,
 });
 
-if (!SENSOR_ID1 || Number.isNaN(SENSOR_ID1)) {
-  console.error("SENSOR_ID1 is required (set it in .env). Exiting.");
-  process.exit(1);
-}
+// Dynamic sensor mapping
+let sensorMapping = new Map(); // IP -> { sensor1Id, sensor2Id, location }
 let latestData = { sensor1In: null, sensor2In: null };
 
 // Add this state near the other state variables
 let expectNext = 1; // 1 => SENSOR_ID1, 2 => SENSOR_ID2
 let lastPlainAt = 0;
 const SEQ_RESET_MS = 2000; // reset alternation if gap > 2s
+
+// Fetch sensor mapping from database
+async function fetchSensorMapping() {
+  try {
+    const url = new URL(`${BACKEND_URL}/api/arduino`);
+    const options = {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        Connection: "keep-alive",
+      },
+      agent: httpAgent,
+    };
+
+    const transport = http;
+    const started = Date.now();
+
+    return new Promise((resolve, reject) => {
+      const req = transport.request(url, options, (res) => {
+        let data = "";
+        res.on("data", (chunk) => (data += chunk));
+        res.on("end", () => {
+          const dur = Date.now() - started;
+          try {
+            const response = JSON.parse(data);
+            if (response.success && response.data) {
+              // Process Arduino devices and their sensors
+              const mapping = new Map();
+
+              response.data.forEach(async (arduino) => {
+                try {
+                  // Get sensors for this Arduino
+                  const sensorUrl = new URL(
+                    `${BACKEND_URL}/api/arduino/${arduino.arduino_id}/sensors`
+                  );
+                  const sensorReq = transport.request(
+                    sensorUrl,
+                    options,
+                    (sensorRes) => {
+                      let sensorData = "";
+                      sensorRes.on("data", (chunk) => (sensorData += chunk));
+                      sensorRes.on("end", () => {
+                        try {
+                          const sensorResponse = JSON.parse(sensorData);
+                          if (sensorResponse.success && sensorResponse.data) {
+                            const sensors = sensorResponse.data;
+                            const sensor1 = sensors.find(
+                              (s) => s.sensor_type === "ultrasonic"
+                            );
+                            const sensor2 = sensors.find(
+                              (s) =>
+                                s.sensor_type === "ultrasonic" &&
+                                s.sensor_id !== sensor1?.sensor_id
+                            );
+
+                            mapping.set(arduino.ip_address, {
+                              arduinoId: arduino.arduino_id,
+                              location: arduino.location,
+                              sensor1Id: sensor1?.sensor_id || null,
+                              sensor2Id: sensor2?.sensor_id || null,
+                            });
+
+                            console.log(
+                              `📡 Mapped ${arduino.location} (${arduino.ip_address}): Sensor1=${sensor1?.sensor_id}, Sensor2=${sensor2?.sensor_id}`
+                            );
+                          }
+                        } catch (e) {
+                          console.error(
+                            `Error parsing sensor data for ${arduino.ip_address}:`,
+                            e.message
+                          );
+                        }
+                      });
+                    }
+                  );
+
+                  sensorReq.on("error", (e) => {
+                    console.error(
+                      `Error fetching sensors for ${arduino.ip_address}:`,
+                      e.message
+                    );
+                  });
+
+                  sensorReq.end();
+                } catch (e) {
+                  console.error(
+                    `Error processing Arduino ${arduino.ip_address}:`,
+                    e.message
+                  );
+                }
+              });
+
+              // Wait a bit for all sensor requests to complete
+              setTimeout(() => {
+                sensorMapping = mapping;
+                console.log(
+                  `✅ Sensor mapping updated: ${mapping.size} devices mapped`
+                );
+                resolve(mapping);
+              }, 1000);
+            } else {
+              console.log(
+                `[BACKEND ${res.statusCode} in ${dur}ms] Failed to fetch Arduino devices`
+              );
+              resolve(new Map());
+            }
+          } catch (e) {
+            console.error("Error parsing Arduino data:", e.message);
+            resolve(new Map());
+          }
+        });
+      });
+
+      req.setTimeout(5000, () => {
+        req.destroy(new Error("timeout"));
+        resolve(new Map());
+      });
+
+      req.on("error", (e) => {
+        console.error("Error fetching Arduino devices:", e.message);
+        resolve(new Map());
+      });
+
+      req.end();
+    });
+  } catch (e) {
+    console.error("Failed to fetch sensor mapping:", e.message);
+    return new Map();
+  }
+}
 
 // List available ports (debug)
 SerialPort.list()
@@ -141,29 +268,38 @@ function maybeSend(sensorId, rangeIn) {
   }
 }
 
-// Helpers to route JSON keys to sensor IDs
-function targetSensorIdForKey(key) {
-  const k = String(key || "").toLowerCase();
-  if (
-    /\b2\b|2$/.test(k) ||
-    k.includes("2in") ||
-    /sensor2|value2|range2|distance2/.test(k)
-  ) {
-    return SENSOR_ID2 || null;
+// Enhanced sensor ID detection with database mapping
+function getSensorIdForValue(value, sourceIp = null) {
+  // If we have database mapping, use it
+  if (AUTO_DETECT_SENSORS && sensorMapping.size > 0) {
+    // Try to find the Arduino device that might be sending this data
+    // For now, we'll use a simple round-robin approach
+    const devices = Array.from(sensorMapping.values());
+    if (devices.length > 0) {
+      // Use expectNext to alternate between sensors
+      const device = devices[0]; // Use first device for now
+      if (expectNext === 1 && device.sensor1Id) {
+        return device.sensor1Id;
+      } else if (expectNext === 2 && device.sensor2Id) {
+        return device.sensor2Id;
+      } else if (device.sensor1Id) {
+        return device.sensor1Id; // Fallback to sensor1
+      }
+    }
   }
-  if (
-    /\b1\b|1$/.test(k) ||
-    k.includes("1in") ||
-    /sensor1|value1|range1|distance1/.test(k)
-  ) {
+
+  // Fallback to environment variables (legacy mode)
+  const SENSOR_ID1 = parseInt(process.env.SENSOR_ID1 || "0", 10);
+  const SENSOR_ID2 = parseInt(process.env.SENSOR_ID2 || "0", 10);
+
+  if (expectNext === 1 || !SENSOR_ID2) {
     return SENSOR_ID1;
+  } else {
+    return SENSOR_ID2;
   }
-  // generic keys go to SENSOR_ID1
-  if (/(sensorvalue|distance|range|value)/.test(k)) return SENSOR_ID1;
-  return null;
 }
 
-// Parse incoming serial lines (alternate plain numbers between sensors)
+// Parse incoming serial lines (enhanced with database integration)
 parser.on("data", (data) => {
   try {
     const raw = String(data || "");
@@ -173,7 +309,21 @@ parser.on("data", (data) => {
     let targetOverride = null;
     const m = cleaned.match(/^\s*S([12])\s*:\s*(.+)$/i);
     const payload = m ? m[2].trim() : cleaned;
-    if (m) targetOverride = m[1] === "1" ? SENSOR_ID1 : SENSOR_ID2 || null;
+    if (m) {
+      // Use database mapping for S1/S2 override
+      if (AUTO_DETECT_SENSORS && sensorMapping.size > 0) {
+        const devices = Array.from(sensorMapping.values());
+        if (devices.length > 0) {
+          const device = devices[0];
+          targetOverride = m[1] === "1" ? device.sensor1Id : device.sensor2Id;
+        }
+      } else {
+        // Legacy mode
+        const SENSOR_ID1 = parseInt(process.env.SENSOR_ID1 || "0", 10);
+        const SENSOR_ID2 = parseInt(process.env.SENSOR_ID2 || "0", 10);
+        targetOverride = m[1] === "1" ? SENSOR_ID1 : SENSOR_ID2;
+      }
+    }
 
     // Case 0: known status/noise lines → ignore silently
     if (
@@ -182,7 +332,7 @@ parser.on("data", (data) => {
       return;
     }
 
-    // Case 1: plain number → route to override or alternate SENSOR_ID1/SENSOR_ID2
+    // Case 1: plain number → route to appropriate sensor
     if (/^\d+(\.\d+)?$/.test(payload)) {
       const valueIn = Math.round(Number(payload));
 
@@ -193,19 +343,26 @@ parser.on("data", (data) => {
 
       let targetId = targetOverride;
       if (!targetId) {
-        if (expectNext === 1 || !SENSOR_ID2) {
-          targetId = SENSOR_ID1;
-          expectNext = SENSOR_ID2 ? 2 : 1;
+        targetId = getSensorIdForValue(valueIn);
+        // Toggle expectNext for next reading
+        if (AUTO_DETECT_SENSORS && sensorMapping.size > 0) {
+          const devices = Array.from(sensorMapping.values());
+          if (devices.length > 0) {
+            const device = devices[0];
+            expectNext = expectNext === 1 && device.sensor2Id ? 2 : 1;
+          }
         } else {
-          targetId = SENSOR_ID2;
-          expectNext = 1;
+          expectNext = expectNext === 1 ? 2 : 1;
         }
       }
 
-      if (targetId === SENSOR_ID1) {
-        latestData.sensor1In = valueIn;
-      } else if (targetId === SENSOR_ID2) {
-        latestData.sensor2In = valueIn;
+      // Update latest data
+      if (targetId) {
+        if (expectNext === 1) {
+          latestData.sensor1In = valueIn;
+        } else {
+          latestData.sensor2In = valueIn;
+        }
       }
 
       console.log(`Ultrasonic(in) sensor_id=${targetId}:`, valueIn);
@@ -218,10 +375,24 @@ parser.on("data", (data) => {
     if (dm) {
       const which = dm[1] === "1" ? 1 : 2;
       const num = Math.round(Number(dm[2]));
-      const targetId = which === 1 ? SENSOR_ID1 : SENSOR_ID2 || null;
+
+      let targetId = null;
+      if (AUTO_DETECT_SENSORS && sensorMapping.size > 0) {
+        const devices = Array.from(sensorMapping.values());
+        if (devices.length > 0) {
+          const device = devices[0];
+          targetId = which === 1 ? device.sensor1Id : device.sensor2Id;
+        }
+      } else {
+        // Legacy mode
+        const SENSOR_ID1 = parseInt(process.env.SENSOR_ID1 || "0", 10);
+        const SENSOR_ID2 = parseInt(process.env.SENSOR_ID2 || "0", 10);
+        targetId = which === 1 ? SENSOR_ID1 : SENSOR_ID2;
+      }
+
       if (targetId) {
-        if (targetId === SENSOR_ID1) latestData.sensor1In = num;
-        if (targetId === SENSOR_ID2) latestData.sensor2In = num;
+        if (which === 1) latestData.sensor1In = num;
+        if (which === 2) latestData.sensor2In = num;
         console.log(`Ultrasonic(in) sensor_id=${targetId}:`, num);
         maybeSend(targetId, num);
       }
@@ -235,15 +406,37 @@ parser.on("data", (data) => {
     if (dm) {
       const n1 = Math.round(Number(dm[1]));
       const n2 = Math.round(Number(dm[2]));
-      if (SENSOR_ID1) {
-        latestData.sensor1In = n1;
-        console.log(`Ultrasonic(in) sensor_id=${SENSOR_ID1}:`, n1);
-        maybeSend(SENSOR_ID1, n1);
-      }
-      if (SENSOR_ID2) {
-        latestData.sensor2In = n2;
-        console.log(`Ultrasonic(in) sensor_id=${SENSOR_ID2}:`, n2);
-        maybeSend(SENSOR_ID2, n2);
+
+      if (AUTO_DETECT_SENSORS && sensorMapping.size > 0) {
+        const devices = Array.from(sensorMapping.values());
+        if (devices.length > 0) {
+          const device = devices[0];
+          if (device.sensor1Id) {
+            latestData.sensor1In = n1;
+            console.log(`Ultrasonic(in) sensor_id=${device.sensor1Id}:`, n1);
+            maybeSend(device.sensor1Id, n1);
+          }
+          if (device.sensor2Id) {
+            latestData.sensor2In = n2;
+            console.log(`Ultrasonic(in) sensor_id=${device.sensor2Id}:`, n2);
+            maybeSend(device.sensor2Id, n2);
+          }
+        }
+      } else {
+        // Legacy mode
+        const SENSOR_ID1 = parseInt(process.env.SENSOR_ID1 || "0", 10);
+        const SENSOR_ID2 = parseInt(process.env.SENSOR_ID2 || "0", 10);
+
+        if (SENSOR_ID1) {
+          latestData.sensor1In = n1;
+          console.log(`Ultrasonic(in) sensor_id=${SENSOR_ID1}:`, n1);
+          maybeSend(SENSOR_ID1, n1);
+        }
+        if (SENSOR_ID2) {
+          latestData.sensor2In = n2;
+          console.log(`Ultrasonic(in) sensor_id=${SENSOR_ID2}:`, n2);
+          maybeSend(SENSOR_ID2, n2);
+        }
       }
       return;
     }
@@ -254,17 +447,18 @@ parser.on("data", (data) => {
       for (const [key, val] of Object.entries(parsed)) {
         if (val == null || !isFinite(val)) continue;
         const valueIn = Math.round(Number(val));
-        const targetId =
-          targetOverride || targetSensorIdForKey(key) || SENSOR_ID1;
+        const targetId = getSensorIdForValue(valueIn);
 
-        if (targetId === SENSOR_ID1) {
-          latestData.sensor1In = valueIn;
-        } else if (targetId === SENSOR_ID2) {
-          latestData.sensor2In = valueIn;
+        if (targetId) {
+          if (expectNext === 1) {
+            latestData.sensor1In = valueIn;
+          } else {
+            latestData.sensor2In = valueIn;
+          }
+
+          console.log(`Ultrasonic(in) sensor_id=${targetId}:`, valueIn);
+          maybeSend(targetId, valueIn);
         }
-
-        console.log(`Ultrasonic(in) sensor_id=${targetId}:`, valueIn);
-        maybeSend(targetId, valueIn);
       }
       return;
     }
@@ -285,10 +479,47 @@ app.get("/api/sensor", (_req, res) => {
   res.json(latestData);
 });
 
+// Local endpoint to refresh sensor mapping
+app.get("/api/refresh-mapping", async (_req, res) => {
+  try {
+    await fetchSensorMapping();
+    res.json({
+      success: true,
+      message: "Sensor mapping refreshed",
+      mapping: Object.fromEntries(sensorMapping),
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// Initialize sensor mapping on startup
+if (AUTO_DETECT_SENSORS) {
+  console.log(
+    "🔄 Auto-detection mode enabled - fetching sensor mapping from database..."
+  );
+  fetchSensorMapping().then(() => {
+    console.log("✅ Sensor mapping initialized");
+  });
+
+  // Refresh mapping every 5 minutes
+  setInterval(() => {
+    console.log("🔄 Refreshing sensor mapping...");
+    fetchSensorMapping();
+  }, 5 * 60 * 1000);
+} else {
+  console.log(" Legacy mode - using environment variables for sensor IDs");
+}
+
 app.listen(localApiPort, () => {
   console.log(`Local sensor server on http://localhost:${localApiPort}`);
-  console.log(`Pushing to ${BACKEND_URL}/api/sensor/${SENSOR_ID1}`);
-  //   if (SENSOR_ID2) {
-  console.log(`Also pushing to ${BACKEND_URL}/api/sensor/${SENSOR_ID2}`);
-  //   }
+  if (AUTO_DETECT_SENSORS) {
+    console.log(`Auto-detection enabled - will map sensors from database`);
+  } else {
+    console.log(`Legacy mode - using SENSOR_ID1 and SENSOR_ID2 from .env`);
+  }
+  console.log(`Pushing to ${BACKEND_URL}/api/sensor/`);
 });

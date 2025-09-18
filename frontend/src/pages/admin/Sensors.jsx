@@ -11,6 +11,11 @@ const AdminSensors = () => {
   const [esp8266Data, setEsp8266Data] = useState(null);
   const [esp8266Loading, setEsp8266Loading] = useState(false);
 
+  // New state for automatic distance detection
+  const [autoDistanceDetection, setAutoDistanceDetection] = useState(false);
+  const [distanceDetectionInterval, setDistanceDetectionInterval] =
+    useState(3000);
+
   const load = async () => {
     try {
       setLoading(true);
@@ -29,11 +34,47 @@ const AdminSensors = () => {
     }
   };
 
+  // Automatic distance detection function
+  const fetchDistancesAutomatically = async () => {
+    if (!espBaseUrl) return;
+
+    try {
+      const headers = {};
+      // Extract IP from espBaseUrl
+      const targetIp = espBaseUrl
+        .replace(/^https?:\/\//, "")
+        .replace(/\/+$/, "");
+      if (targetIp) {
+        headers["X-Arduino-IP"] = targetIp;
+      }
+
+      const res = await fetch(`/api/esp8266/distance/both`, {
+        method: "GET",
+        headers,
+      });
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        setEsp8266Data(data.data);
+        // Auto-hide success message after 2 seconds
+        setTimeout(() => {
+          setMessage("");
+        }, 2000);
+
+        // Reload sensors to show updated ranges
+        setTimeout(load, 500);
+      }
+    } catch (e) {
+      // Silent error handling for automatic detection
+      console.log("Auto distance detection error:", e.message);
+    }
+  };
+
   useEffect(() => {
     load();
   }, []);
 
-  // Auto-refresh effect
+  // Auto-refresh effect for sensors
   useEffect(() => {
     let interval;
     if (autoRefresh) {
@@ -45,6 +86,22 @@ const AdminSensors = () => {
       if (interval) clearInterval(interval);
     };
   }, [autoRefresh, refreshInterval]);
+
+  // Auto-refresh effect for automatic distance detection
+  useEffect(() => {
+    let interval;
+    if (autoDistanceDetection && espBaseUrl) {
+      // Initial fetch
+      fetchDistancesAutomatically();
+
+      interval = setInterval(() => {
+        fetchDistancesAutomatically();
+      }, distanceDetectionInterval);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [autoDistanceDetection, distanceDetectionInterval, espBaseUrl]);
 
   // Load ESP base URL from localStorage
   useEffect(() => {
@@ -72,9 +129,8 @@ const AdminSensors = () => {
         throw new Error("Set a valid ESP Base URL (http://x.x.x.x)");
       }
       const res = await fetch(`${base}${path}`, { method: "GET" });
-      const text = await res.text();
 
-      if (!res.ok) throw new Error(text || `ESP error ${res.status}`);
+      if (!res.ok) throw new Error(`ESP error ${res.status}`);
 
       if (path === "/sensor/on") {
         setMessage("ESP: Sensor ON sent");
@@ -95,7 +151,19 @@ const AdminSensors = () => {
     setError("");
     setMessage("");
     try {
-      const res = await fetch(`/api/esp8266${endpoint}`, { method: "GET" });
+      const headers = {};
+      // Extract IP from espBaseUrl for manual mode
+      const targetIp = espBaseUrl
+        .replace(/^https?:\/\//, "")
+        .replace(/\/+$/, "");
+      if (targetIp) {
+        headers["X-Arduino-IP"] = targetIp;
+      }
+
+      const res = await fetch(`/api/esp8266${endpoint}`, {
+        method: "GET",
+        headers,
+      });
       const data = await res.json();
 
       if (!res.ok) {
@@ -123,13 +191,9 @@ const AdminSensors = () => {
   const sensorOn = () => hitEsp("/sensor/on");
   const sensorOff = () => hitEsp("/sensor/off");
 
-  // New ESP8266 API methods
+  // ESP8266 API methods - only Sensor ON/OFF
   const esp8266SensorOn = () => hitESP8266API("/sensor/on");
   const esp8266SensorOff = () => hitESP8266API("/sensor/off");
-  const esp8266GetDistance1 = () => hitESP8266API("/distance/1");
-  const esp8266GetDistance2 = () => hitESP8266API("/distance/2");
-  const esp8266GetBothDistances = () => hitESP8266API("/distance/both");
-  const esp8266GetStatus = () => hitESP8266API("/status");
 
   const updateSensor = async (sensorId, updates) => {
     try {
@@ -187,6 +251,20 @@ const AdminSensors = () => {
               }}
             >
               Auto-refresh ON
+            </span>
+          )}
+          {autoDistanceDetection && (
+            <span
+              style={{
+                fontSize: 12,
+                color: "#17a2b8",
+                background: "#e6f7ff",
+                padding: "2px 6px",
+                borderRadius: 4,
+                border: "1px solid #91d5ff",
+              }}
+            >
+              Auto Distance Detection ON
             </span>
           )}
         </div>
@@ -256,28 +334,75 @@ const AdminSensors = () => {
         <h3 style={{ margin: "0 0 12px 0", color: "#495057" }}>
           ESP8266 Configuration
         </h3>
-        <div
-          style={{
-            display: "flex",
-            gap: 8,
-            alignItems: "center",
-            marginBottom: 12,
-          }}
-        >
-          <label style={{ fontSize: 14, fontWeight: 500 }}>ESP Base URL:</label>
-          <input
-            type="text"
-            value={espBaseUrl}
-            onChange={(e) => saveEspBaseUrl(e.target.value)}
-            placeholder="http://192.168.1.100"
-            style={{
-              padding: "6px 12px",
-              border: "1px solid #ced4da",
-              borderRadius: 4,
-              fontSize: 14,
-              minWidth: 200,
-            }}
-          />
+
+        {/* Manual Mode ESP Base URL Input */}
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <label style={{ fontSize: 14, fontWeight: 500 }}>
+              ESP Base URL:
+            </label>
+            <input
+              type="text"
+              value={espBaseUrl}
+              onChange={(e) => saveEspBaseUrl(e.target.value)}
+              placeholder="http://192.168.1.100"
+              style={{
+                padding: "6px 12px",
+                border: "1px solid #ced4da",
+                borderRadius: 4,
+                fontSize: 14,
+                minWidth: 200,
+              }}
+            />
+          </div>
+        </div>
+
+        {/* Automatic Distance Detection Controls */}
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <button
+              onClick={() => setAutoDistanceDetection(!autoDistanceDetection)}
+              disabled={!espBaseUrl}
+              style={{
+                padding: "6px 12px",
+                fontSize: 14,
+                border: "1px solid #17a2b8",
+                borderRadius: 4,
+                background:
+                  autoDistanceDetection && espBaseUrl ? "#17a2b8" : "#fff",
+                color: autoDistanceDetection && espBaseUrl ? "#fff" : "#17a2b8",
+                cursor: !espBaseUrl ? "not-allowed" : "pointer",
+                opacity: !espBaseUrl ? 0.6 : 1,
+              }}
+            >
+              {autoDistanceDetection
+                ? "Stop Auto Detection"
+                : "Start Auto Detection"}
+            </button>
+            <select
+              value={distanceDetectionInterval}
+              onChange={(e) =>
+                setDistanceDetectionInterval(Number(e.target.value))
+              }
+              disabled={!espBaseUrl}
+              style={{
+                padding: "6px 12px",
+                fontSize: 14,
+                border: "1px solid #ced4da",
+                borderRadius: 4,
+                opacity: !espBaseUrl ? 0.6 : 1,
+              }}
+            >
+              <option value={1000}>1s</option>
+              <option value={2000}>2s</option>
+              <option value={3000}>3s</option>
+              <option value={5000}>5s</option>
+              <option value={10000}>10s</option>
+            </select>
+            <span style={{ fontSize: 12, color: "#6c757d" }}>
+              Auto-detects distances and updates database
+            </span>
+          </div>
         </div>
 
         {/* ESP8266 Control Buttons */}
@@ -290,53 +415,19 @@ const AdminSensors = () => {
           }}
         >
           <h4 style={{ margin: "0 0 8px 0", width: "100%", color: "#495057" }}>
-            Direct ESP8266 Control (Legacy)
+            ESP8266 Sensor Control
           </h4>
-          <button
-            onClick={sensorOn}
-            style={{
-              padding: "6px 12px",
-              border: "1px solid #28a745",
-              borderRadius: 4,
-              background: "#28a745",
-              color: "white",
-              cursor: "pointer",
-              fontSize: 14,
-            }}
-          >
-            Sensor ON
-          </button>
-          <button
-            onClick={sensorOff}
-            style={{
-              padding: "6px 12px",
-              border: "1px solid #dc3545",
-              borderRadius: 4,
-              background: "#dc3545",
-              color: "white",
-              cursor: "pointer",
-              fontSize: 14,
-            }}
-          >
-            Sensor OFF
-          </button>
-        </div>
 
-        {/* New ESP8266 API Control Buttons */}
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <h4 style={{ margin: "0 0 8px 0", width: "100%", color: "#495057" }}>
-            ESP8266 API Control (New)
-          </h4>
           <button
             onClick={esp8266SensorOn}
-            disabled={esp8266Loading}
+            disabled={esp8266Loading || !espBaseUrl}
             style={{
               padding: "6px 12px",
               border: "1px solid #28a745",
               borderRadius: 4,
-              background: esp8266Loading ? "#6c757d" : "#28a745",
+              background: esp8266Loading || !espBaseUrl ? "#6c757d" : "#28a745",
               color: "white",
-              cursor: esp8266Loading ? "not-allowed" : "pointer",
+              cursor: esp8266Loading || !espBaseUrl ? "not-allowed" : "pointer",
               fontSize: 14,
             }}
           >
@@ -344,78 +435,18 @@ const AdminSensors = () => {
           </button>
           <button
             onClick={esp8266SensorOff}
-            disabled={esp8266Loading}
+            disabled={esp8266Loading || !espBaseUrl}
             style={{
               padding: "6px 12px",
               border: "1px solid #dc3545",
               borderRadius: 4,
-              background: esp8266Loading ? "#6c757d" : "#dc3545",
+              background: esp8266Loading || !espBaseUrl ? "#6c757d" : "#dc3545",
               color: "white",
-              cursor: esp8266Loading ? "not-allowed" : "pointer",
+              cursor: esp8266Loading || !espBaseUrl ? "not-allowed" : "pointer",
               fontSize: 14,
             }}
           >
             {esp8266Loading ? "Loading..." : "Sensor OFF"}
-          </button>
-          <button
-            onClick={esp8266GetDistance1}
-            disabled={esp8266Loading}
-            style={{
-              padding: "6px 12px",
-              border: "1px solid #007bff",
-              borderRadius: 4,
-              background: esp8266Loading ? "#6c757d" : "#007bff",
-              color: "white",
-              cursor: esp8266Loading ? "not-allowed" : "pointer",
-              fontSize: 14,
-            }}
-          >
-            {esp8266Loading ? "Loading..." : "Get Distance 1"}
-          </button>
-          <button
-            onClick={esp8266GetDistance2}
-            disabled={esp8266Loading}
-            style={{
-              padding: "6px 12px",
-              border: "1px solid #007bff",
-              borderRadius: 4,
-              background: esp8266Loading ? "#6c757d" : "#007bff",
-              color: "white",
-              cursor: esp8266Loading ? "not-allowed" : "pointer",
-              fontSize: 14,
-            }}
-          >
-            {esp8266Loading ? "Loading..." : "Get Distance 2"}
-          </button>
-          <button
-            onClick={esp8266GetBothDistances}
-            disabled={esp8266Loading}
-            style={{
-              padding: "6px 12px",
-              border: "1px solid #17a2b8",
-              borderRadius: 4,
-              background: esp8266Loading ? "#6c757d" : "#17a2b8",
-              color: "white",
-              cursor: esp8266Loading ? "not-allowed" : "pointer",
-              fontSize: 14,
-            }}
-          >
-            {esp8266Loading ? "Loading..." : "Get Both Distances"}
-          </button>
-          <button
-            onClick={esp8266GetStatus}
-            disabled={esp8266Loading}
-            style={{
-              padding: "6px 12px",
-              border: "1px solid #6f42c1",
-              borderRadius: 4,
-              background: esp8266Loading ? "#6c757d" : "#6f42c1",
-              color: "white",
-              cursor: esp8266Loading ? "not-allowed" : "pointer",
-              fontSize: 14,
-            }}
-          >
-            {esp8266Loading ? "Loading..." : "Get Status"}
           </button>
         </div>
 
