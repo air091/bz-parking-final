@@ -252,6 +252,25 @@ class SensorController {
       const result = await SensorModel.update(parseInt(id), updateData);
 
       if (result.success) {
+        // If sensor status is being updated, also update associated parking slots
+        if (updateData.status) {
+          try {
+            await SensorController.updateParkingSlotsFromSensorStatus(
+              parseInt(id),
+              updateData.status
+            );
+            console.log(
+              `✅ Updated parking slots for sensor ${id} to status: ${updateData.status}`
+            );
+          } catch (parkingSlotError) {
+            console.error(
+              "Error updating parking slots from sensor status:",
+              parkingSlotError.message
+            );
+            // Don't fail the sensor update if parking slot update fails
+          }
+        }
+
         res.status(200).json({
           success: true,
           message: result.message,
@@ -284,6 +303,51 @@ class SensorController {
         error: error.message,
         timestamp: new Date().toISOString(),
       });
+    }
+  }
+
+  // Helper method to update parking slots based on sensor status
+  static async updateParkingSlotsFromSensorStatus(sensorId, sensorStatus) {
+    try {
+      const ParkingSlotModel = require("../models/ParkingSlot.models.js");
+
+      // Get all parking slots that use this sensor
+      const parkingSlotsResult = await ParkingSlotModel.getBySensorId(sensorId);
+
+      if (parkingSlotsResult.success && parkingSlotsResult.data.length > 0) {
+        console.log(
+          `Found ${parkingSlotsResult.data.length} parking slot(s) using sensor ${sensorId}`
+        );
+
+        // Update each parking slot based on sensor status
+        for (const slot of parkingSlotsResult.data) {
+          let newSlotStatus;
+
+          if (sensorStatus === "maintenance") {
+            // If sensor goes to maintenance, parking slot goes to maintenance
+            newSlotStatus = "maintenance";
+          } else if (sensorStatus === "working") {
+            // If sensor goes to working, determine slot status based on sensor range
+            // This will be handled by the automatic sensor range updates
+            continue; // Skip manual status change, let sensor range logic handle it
+          }
+
+          if (newSlotStatus && newSlotStatus !== slot.status) {
+            await ParkingSlotModel.update(slot.slot_id, {
+              status: newSlotStatus,
+            });
+            console.log(
+              `✅ Updated parking slot ${slot.slot_id} from "${slot.status}" to "${newSlotStatus}" due to sensor ${sensorId} status change`
+            );
+          }
+        }
+      }
+    } catch (error) {
+      console.error(
+        "Error updating parking slots from sensor status:",
+        error.message
+      );
+      throw error;
     }
   }
 

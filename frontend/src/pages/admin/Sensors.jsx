@@ -1115,6 +1115,141 @@ const AdminSensors = () => {
     }
   }, []);
 
+  // Update sensors based on their data status
+  const updateSensorsAndParkingSlots = async (distance1, distance2) => {
+    const updatePromises = [];
+
+    // Handle Sensor 1 (ID 7)
+    if (distance1 !== null && distance1 > 0) {
+      updatePromises.push(
+        fetch("/api/sensor/7", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sensor_range: distance1,
+            status: "working",
+          }),
+        })
+      );
+      console.log("✅ Sensor 7 updated to 'working' - distance:", distance1);
+    } else {
+      updatePromises.push(
+        fetch("/api/sensor/7", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sensor_range: 0,
+            status: "maintenance",
+          }),
+        })
+      );
+      console.log("⚠️ Sensor 7 set to 'maintenance' - no valid data");
+    }
+
+    // Handle Sensor 2 (ID 6)
+    if (distance2 !== null && distance2 > 0) {
+      updatePromises.push(
+        fetch("/api/sensor/6", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sensor_range: distance2,
+            status: "working",
+          }),
+        })
+      );
+      console.log("✅ Sensor 6 updated to 'working' - distance:", distance2);
+    } else {
+      updatePromises.push(
+        fetch("/api/sensor/6", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sensor_range: 0,
+            status: "maintenance",
+          }),
+        })
+      );
+      console.log("⚠️ Sensor 6 set to 'maintenance' - no valid data");
+    }
+
+    // Execute all sensor updates
+    if (updatePromises.length > 0) {
+      await Promise.all(updatePromises);
+      console.log("✅ Updated sensor ranges and status from ESP8266 API");
+
+      // Now update parking slots based on sensor data
+      await updateParkingSlotsFromSensorData(distance1, distance2);
+
+      // Reload sensors to show updated ranges
+      setTimeout(load, 500);
+    }
+  };
+
+  // Helper function to update parking slots based on sensor data
+  const updateParkingSlotsFromSensorData = async (distance1, distance2) => {
+    try {
+      // Update parking slots for sensor 7
+      if (distance1 !== null) {
+        const sensor7Status = distance1 > 0 ? "working" : "maintenance";
+        const sensor7Range = distance1 > 0 ? distance1 : 0;
+
+        // Find parking slots using sensor 7 and update them
+        const slots7Response = await fetch("/api/parking-slot/sensor/7");
+        if (slots7Response.ok) {
+          const slots7Data = await slots7Response.json();
+          if (slots7Data.success && slots7Data.data.length > 0) {
+            for (const slot of slots7Data.data) {
+              await fetch(`/api/parking-slot/${slot.slot_id}/sensor-update`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  sensor_status: sensor7Status,
+                  sensor_range: sensor7Range,
+                }),
+              });
+            }
+            console.log(
+              `✅ Updated ${slots7Data.data.length} parking slot(s) for sensor 7`
+            );
+          }
+        }
+      }
+
+      // Update parking slots for sensor 6
+      if (distance2 !== null) {
+        const sensor6Status = distance2 > 0 ? "working" : "maintenance";
+        const sensor6Range = distance2 > 0 ? distance2 : 0;
+
+        // Find parking slots using sensor 6 and update them
+        const slots6Response = await fetch("/api/parking-slot/sensor/6");
+        if (slots6Response.ok) {
+          const slots6Data = await slots6Response.json();
+          if (slots6Data.success && slots6Data.data.length > 0) {
+            for (const slot of slots6Data.data) {
+              await fetch(`/api/parking-slot/${slot.slot_id}/sensor-update`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  sensor_status: sensor6Status,
+                  sensor_range: sensor6Range,
+                }),
+              });
+            }
+            console.log(
+              `✅ Updated ${slots6Data.data.length} parking slot(s) for sensor 6`
+            );
+          }
+        }
+      }
+    } catch (error) {
+      console.error(
+        "Error updating parking slots from sensor data:",
+        error.message
+      );
+    }
+  };
+
   return (
     <div>
       <div

@@ -267,69 +267,72 @@ class ParkingSlotModel {
   }
 
   // Update parking slot based on sensor data
-  // Update parking slot based on sensor data (sensor_range in inches)
   static async updateSlotBasedOnSensor(slotId, sensorData) {
     try {
-      // Check if parking slot exists
-      const existingSlot = await this.getById(slotId);
-      if (!existingSlot.success) {
+      // First get the current slot data
+      const slotResult = await this.getById(slotId);
+      if (!slotResult.success) {
         return {
           success: false,
-          error: "Parking slot not found",
+          error: slotResult.error,
         };
       }
 
-      let newStatus = existingSlot.data.status;
+      const slot = slotResult.data;
+      const previousStatus = slot.status;
+      let newStatus = slot.status;
+      let statusChanged = false;
 
-      // Use inches for thresholding: <5 => occupied, >5 => available, =5 => maintenance
+      // Determine new status based on sensor data
       if (sensorData.status === "maintenance") {
+        // If sensor is in maintenance, parking slot goes to maintenance
         newStatus = "maintenance";
       } else if (sensorData.status === "working") {
-        if (sensorData.sensor_range < 4) {
+        // If sensor is working, determine status based on range
+        if (sensorData.sensor_range <= 0) {
+          // No valid range data - go to maintenance
+          newStatus = "maintenance";
+        } else if (sensorData.sensor_range < 3) {
+          // Close range - occupied
           newStatus = "occupied";
-        } else if (sensorData.sensor_range > 4) {
+        } else {
+          // Far range - available
           newStatus = "available";
         }
       }
 
-      // Only update if status changed
-      if (newStatus !== existingSlot.data.status) {
-        const { results } = await parkingDB.query(
-          "UPDATE parking_slot SET status = ? WHERE slot_id = ?",
-          [newStatus, slotId]
-        );
+      // Update status if it changed
+      if (newStatus !== previousStatus) {
+        statusChanged = true;
+        const updateResult = await this.update(slotId, { status: newStatus });
 
-        if (results.affectedRows === 0) {
+        if (updateResult.success) {
+          return {
+            success: true,
+            message: `Parking slot status updated from "${previousStatus}" to "${newStatus}" based on sensor data`,
+            data: updateResult.data,
+            statusChanged: true,
+            previousStatus: previousStatus,
+            newStatus: newStatus,
+          };
+        } else {
           return {
             success: false,
-            error: "Failed to update parking slot status",
+            error: updateResult.error,
           };
         }
-
-        // Get updated parking slot
-        const updatedSlot = await this.getById(slotId);
-
-        return {
-          success: true,
-          data: updatedSlot.data,
-          message: `Parking slot status updated to '${newStatus}' based on sensor data (inches)`,
-          statusChanged: true,
-          previousStatus: existingSlot.data.status,
-          newStatus: newStatus,
-        };
       } else {
         return {
           success: true,
-          data: existingSlot.data,
           message: "Parking slot status unchanged",
+          data: slot,
           statusChanged: false,
+          previousStatus: previousStatus,
+          newStatus: newStatus,
         };
       }
     } catch (error) {
-      console.error(
-        "Error updating parking slot based on sensor:",
-        error.message
-      );
+      console.error("Error updating slot based on sensor:", error.message);
       return {
         success: false,
         error: error.message,
