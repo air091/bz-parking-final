@@ -11,8 +11,9 @@ export default function AdminLayout() {
           <NavLink to="/admin" end>
             Dashboard
           </NavLink>
-          <NavLink to="/admin/services">Services</NavLink>
+          <NavLink to="/admin/arduino">Arduino</NavLink>
           <NavLink to="/admin/sensors">Sensors</NavLink>
+          <NavLink to="/admin/services">Services</NavLink>
           <NavLink to="/admin/parking-slots">Parking Slots</NavLink>
           <NavLink to="/admin/users">Users</NavLink>
           <NavLink to="/admin/parking-activities">Parking Activities</NavLink>

@@ -4,9 +4,14 @@ class ArduinoModel {
   // Get all Arduino devices
   static async getAll() {
     try {
-      const { results } = await parkingDB.query(
-        "SELECT * FROM arduino ORDER BY created_at DESC"
-      );
+      const { results } = await parkingDB.query(`
+        SELECT a.*, 
+               COUNT(s.sensor_id) as sensor_count
+        FROM arduino a 
+        LEFT JOIN sensor s ON a.arduino_id = s.arduino_id 
+        GROUP BY a.arduino_id
+        ORDER BY a.created_at DESC
+      `);
       return {
         success: true,
         data: results,
@@ -21,11 +26,66 @@ class ArduinoModel {
     }
   }
 
+  // Get all Arduino devices with their sensors
+  static async getAllWithSensors() {
+    try {
+      const { results } = await parkingDB.query(`
+        SELECT a.*, 
+               COUNT(s.sensor_id) as sensor_count,
+               GROUP_CONCAT(
+                 CONCAT(s.sensor_id, ':', s.sensor_type, ':', s.status) 
+                 SEPARATOR '|'
+               ) as sensors_info
+        FROM arduino a 
+        LEFT JOIN sensor s ON a.arduino_id = s.arduino_id 
+        GROUP BY a.arduino_id
+        ORDER BY a.created_at DESC
+      `);
+
+      // Parse sensors info
+      const processedResults = results.map((arduino) => {
+        const sensors = arduino.sensors_info
+          ? arduino.sensors_info.split("|").map((sensorInfo) => {
+              const [id, type, status] = sensorInfo.split(":");
+              return { id, type, status };
+            })
+          : [];
+
+        return {
+          ...arduino,
+          sensors: sensors,
+        };
+      });
+
+      return {
+        success: true,
+        data: processedResults,
+        count: processedResults.length,
+      };
+    } catch (error) {
+      console.error(
+        "Error getting Arduino devices with sensors:",
+        error.message
+      );
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  }
+
   // Get Arduino device by ID
   static async getById(arduinoId) {
     try {
       const { results } = await parkingDB.query(
-        "SELECT * FROM arduino WHERE arduino_id = ?",
+        `
+        SELECT a.*, 
+               COUNT(s.sensor_id) as sensor_count
+        FROM arduino a 
+        LEFT JOIN sensor s ON a.arduino_id = s.arduino_id 
+        WHERE a.arduino_id = ?
+        GROUP BY a.arduino_id
+      `,
         [arduinoId]
       );
 
@@ -409,7 +469,7 @@ class ArduinoModel {
   static async getConnectedSensors(arduinoId) {
     try {
       const { results } = await parkingDB.query(
-        "SELECT sensor_id, sensor_type, status FROM sensor WHERE arduino_id = ?",
+        "SELECT sensor_id, sensor_type, status, sensor_range FROM sensor WHERE arduino_id = ?",
         [arduinoId]
       );
 

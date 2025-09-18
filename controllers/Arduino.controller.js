@@ -448,6 +448,45 @@ class ArduinoController {
       });
     }
   }
+
+  // Get all Arduino devices with sensors
+  static async getAllArduinoWithSensors(req, res) {
+    try {
+      console.log(
+        "GET /api/arduino/with-sensors - Fetching Arduino devices with sensors"
+      );
+
+      const result = await ArduinoModel.getAllWithSensors();
+
+      if (result.success) {
+        res.status(200).json({
+          success: true,
+          message: "Arduino devices with sensors retrieved successfully",
+          data: result.data,
+          count: result.count,
+          timestamp: new Date().toISOString(),
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          message: "Failed to retrieve Arduino devices with sensors",
+          error: result.error,
+          timestamp: new Date().toISOString(),
+        });
+      }
+    } catch (error) {
+      console.error(
+        "Error in getAllArduinoWithSensors controller:",
+        error.message
+      );
+      res.status(500).json({
+        success: false,
+        message: "Internal server error",
+        error: error.message,
+        timestamp: new Date().toISOString(),
+      });
+    }
+  }
 }
 
 module.exports = ArduinoController;

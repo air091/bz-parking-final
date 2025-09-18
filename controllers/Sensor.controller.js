@@ -398,6 +398,185 @@ class SensorController {
       });
     }
   }
+
+  // Scan for connected devices on the network
+  static async scanConnectedDevices(req, res) {
+    try {
+      console.log(
+        "GET /api/sensor/scan-devices - Scanning for connected devices"
+      );
+
+      // This is a simplified approach - in a real implementation, you might want to use
+      // network scanning libraries or system commands
+      const connectedDevices = await SensorController.performNetworkScan();
+
+      res.status(200).json({
+        success: true,
+        message: "Network scan completed",
+        data: connectedDevices,
+        count: connectedDevices.length,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      console.error("Error scanning connected devices:", error.message);
+      res.status(500).json({
+        success: false,
+        message: "Failed to scan connected devices",
+        error: error.message,
+        timestamp: new Date().toISOString(),
+      });
+    }
+  }
+
+  // Helper method to perform network scan
+  static async performNetworkScan() {
+    try {
+      // This is a basic implementation - you might want to enhance this
+      // with actual network scanning libraries like 'node-nmap' or 'ping'
+      const { exec } = require("child_process");
+      const util = require("util");
+      const execAsync = util.promisify(exec);
+
+      // Get the local network range (assuming 192.168.1.x)
+      const networkBase = "192.168.1";
+      const devices = [];
+
+      // Scan common IP ranges (1-254)
+      const scanPromises = [];
+      for (let i = 1; i <= 254; i++) {
+        const ip = `${networkBase}.${i}`;
+        scanPromises.push(SensorController.pingDevice(ip));
+      }
+
+      const results = await Promise.allSettled(scanPromises);
+
+      results.forEach((result, index) => {
+        if (result.status === "fulfilled" && result.value.isAlive) {
+          devices.push({
+            ip: result.value.ip,
+            hostname: result.value.hostname || "Unknown",
+            mac: result.value.mac || "Unknown",
+            responseTime: result.value.responseTime || "Unknown",
+            deviceType: SensorController.guessDeviceType(result.value.hostname),
+            lastSeen: new Date().toISOString(),
+          });
+        }
+      });
+
+      return devices.sort((a, b) => {
+        // Sort by IP address
+        const ipA = a.ip.split(".").map(Number);
+        const ipB = b.ip.split(".").map(Number);
+        for (let i = 0; i < 4; i++) {
+          if (ipA[i] !== ipB[i]) return ipA[i] - ipB[i];
+        }
+        return 0;
+      });
+    } catch (error) {
+      console.error("Error performing network scan:", error.message);
+      return [];
+    }
+  }
+
+  // Helper method to ping a single device
+  static async pingDevice(ip) {
+    try {
+      const { exec } = require("child_process");
+      const util = require("util");
+      const execAsync = util.promisify(exec);
+
+      // Use ping command to check if device is alive
+      const { stdout } = await execAsync(`ping -c 1 -W 1000 ${ip}`);
+
+      return {
+        ip,
+        isAlive: true,
+        hostname: await SensorController.getHostname(ip),
+        mac: await SensorController.getMacAddress(ip),
+        responseTime: SensorController.extractResponseTime(stdout),
+      };
+    } catch (error) {
+      return {
+        ip,
+        isAlive: false,
+      };
+    }
+  }
+
+  // Helper method to get hostname
+  static async getHostname(ip) {
+    try {
+      const { exec } = require("child_process");
+      const util = require("util");
+      const execAsync = util.promisify(exec);
+
+      const { stdout } = await execAsync(`nslookup ${ip}`);
+      const match = stdout.match(/name = (.+)\./);
+      return match ? match[1] : "Unknown";
+    } catch (error) {
+      return "Unknown";
+    }
+  }
+
+  // Helper method to get MAC address
+  static async getMacAddress(ip) {
+    try {
+      const { exec } = require("child_process");
+      const util = require("util");
+      const execAsync = util.promisify(exec);
+
+      const { stdout } = await execAsync(`arp -n ${ip}`);
+      const match = stdout.match(
+        /([0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2})/i
+      );
+      return match ? match[1] : "Unknown";
+    } catch (error) {
+      return "Unknown";
+    }
+  }
+
+  // Helper method to extract response time from ping output
+  static extractResponseTime(pingOutput) {
+    try {
+      const match = pingOutput.match(/time=(\d+\.?\d*)/);
+      return match ? `${match[1]}ms` : "Unknown";
+    } catch (error) {
+      return "Unknown";
+    }
+  }
+
+  // Helper method to guess device type based on hostname
+  static guessDeviceType(hostname) {
+    if (!hostname || hostname === "Unknown") return "Unknown";
+
+    const hostnameLower = hostname.toLowerCase();
+
+    if (hostnameLower.includes("esp") || hostnameLower.includes("arduino")) {
+      return "ESP8266/Arduino";
+    } else if (
+      hostnameLower.includes("android") ||
+      hostnameLower.includes("phone")
+    ) {
+      return "Android Device";
+    } else if (
+      hostnameLower.includes("iphone") ||
+      hostnameLower.includes("ipad")
+    ) {
+      return "iOS Device";
+    } else if (
+      hostnameLower.includes("laptop") ||
+      hostnameLower.includes("pc")
+    ) {
+      return "Computer";
+    } else if (
+      hostnameLower.includes("router") ||
+      hostnameLower.includes("gateway")
+    ) {
+      return "Router/Gateway";
+    } else {
+      return "Unknown Device";
+    }
+  }
 }
 
 module.exports = SensorController;

@@ -194,6 +194,46 @@ const AdminSensors = () => {
     }
   );
 
+  // New state for connected devices
+  const [connectedDevices, setConnectedDevices] = useState([]);
+  const [scanningDevices, setScanningDevices] = useState(false);
+  // Add Arduino-related state variables
+  const [arduinos, setArduinos] = useState([]);
+  const [showArduinoTable, setShowArduinoTable] = useState(false);
+
+  // Function to scan for connected devices
+  const scanConnectedDevices = async () => {
+    setScanningDevices(true);
+    setError("");
+    setMessage("");
+
+    try {
+      const res = await fetch("/api/sensor/scan-devices", {
+        method: "GET",
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+        setConnectedDevices(data.data || []);
+        setMessage(`Found ${data.count} connected devices`);
+
+        // Auto-hide success message after 5 seconds
+        setTimeout(() => {
+          setMessage("");
+        }, 5000);
+      } else {
+        throw new Error(
+          data?.message || data?.error || "Failed to scan devices"
+        );
+      }
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setScanningDevices(false);
+    }
+  };
+
   const load = async () => {
     try {
       setLoading(true);
@@ -1059,6 +1099,34 @@ const AdminSensors = () => {
     }
   };
 
+  // Add delete sensor function
+  const deleteSensor = async (sensorId) => {
+    if (!window.confirm("Are you sure you want to delete this sensor?")) {
+      return;
+    }
+
+    try {
+      setError("");
+      setMessage("");
+      const res = await fetch(`/api/sensor/${sensorId}`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (!res.ok)
+        throw new Error(data?.message || data?.error || "Deletion failed");
+      setMessage("Sensor deleted successfully");
+
+      // Auto-hide success message after 3 seconds
+      setTimeout(() => {
+        setMessage("");
+      }, 3000);
+
+      await load(); // Reload sensors list
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
   // Function to start global auto-detection
   const startGlobalAutoDetection = () => {
     if (globalAutoDetectionInterval) {
@@ -1250,6 +1318,26 @@ const AdminSensors = () => {
     }
   };
 
+  // Add function to load Arduino devices
+  const loadArduinos = async () => {
+    try {
+      const res = await fetch("/api/arduino");
+      const data = await res.json();
+      if (!res.ok)
+        throw new Error(
+          data?.message || data?.error || "Failed to load Arduino devices"
+        );
+      setArduinos(Array.isArray(data?.data) ? data.data : []);
+    } catch (e) {
+      console.error("Failed to load Arduino devices:", e.message);
+    }
+  };
+
+  // Load Arduino devices when component mounts
+  useEffect(() => {
+    loadArduinos();
+  }, []);
+
   return (
     <div>
       <div
@@ -1342,6 +1430,257 @@ const AdminSensors = () => {
             {loading ? "Loading..." : "Refresh"}
           </button>
         </div>
+      </div>
+
+      {/* Connected Devices on Hotspot Section - Updated */}
+      <div
+        style={{
+          background: "#f8f9fa",
+          border: "1px solid #dee2e6",
+          borderRadius: 8,
+          padding: 16,
+          marginBottom: 16,
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: 12,
+          }}
+        >
+          <h3 style={{ margin: 0, color: "#495057" }}>Arduino Devices</h3>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <button
+              onClick={() => setShowArduinoTable(!showArduinoTable)}
+              style={{
+                padding: "6px 12px",
+                fontSize: 14,
+                border: "1px solid #6c757d",
+                borderRadius: 4,
+                background: showArduinoTable ? "#6c757d" : "#fff",
+                color: showArduinoTable ? "#fff" : "#6c757d",
+                cursor: "pointer",
+              }}
+            >
+              {showArduinoTable ? "Hide Table" : "Show Table"}
+            </button>
+            <button
+              onClick={loadArduinos}
+              style={{
+                padding: "6px 12px",
+                fontSize: 14,
+                border: "1px solid #17a2b8",
+                borderRadius: 4,
+                background: "#17a2b8",
+                color: "white",
+                cursor: "pointer",
+              }}
+            >
+              Refresh Arduino Data
+            </button>
+          </div>
+        </div>
+
+        {showArduinoTable && (
+          <div
+            style={{
+              background: "white",
+              border: "1px solid #dee2e6",
+              borderRadius: 8,
+              overflow: "hidden",
+            }}
+          >
+            <table
+              style={{
+                width: "100%",
+                borderCollapse: "collapse",
+                fontSize: 14,
+              }}
+            >
+              <thead>
+                <tr style={{ background: "#f8f9fa" }}>
+                  <th
+                    style={{
+                      padding: 12,
+                      textAlign: "left",
+                      borderBottom: "1px solid #dee2e6",
+                      fontWeight: 600,
+                    }}
+                  >
+                    Arduino ID
+                  </th>
+                  <th
+                    style={{
+                      padding: 12,
+                      textAlign: "left",
+                      borderBottom: "1px solid #dee2e6",
+                      fontWeight: 600,
+                    }}
+                  >
+                    IP Address
+                  </th>
+                  <th
+                    style={{
+                      padding: 12,
+                      textAlign: "left",
+                      borderBottom: "1px solid #dee2e6",
+                      fontWeight: 600,
+                    }}
+                  >
+                    Location
+                  </th>
+                  <th
+                    style={{
+                      padding: 12,
+                      textAlign: "left",
+                      borderBottom: "1px solid #dee2e6",
+                      fontWeight: 600,
+                    }}
+                  >
+                    Status
+                  </th>
+                  <th
+                    style={{
+                      padding: 12,
+                      textAlign: "left",
+                      borderBottom: "1px solid #dee2e6",
+                      fontWeight: 600,
+                    }}
+                  >
+                    Sensors Count
+                  </th>
+                  <th
+                    style={{
+                      padding: 12,
+                      textAlign: "left",
+                      borderBottom: "1px solid #dee2e6",
+                      fontWeight: 600,
+                    }}
+                  >
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {arduinos.map((arduino) => (
+                  <tr key={arduino.arduino_id}>
+                    <td
+                      style={{ padding: 12, borderBottom: "1px solid #dee2e6" }}
+                    >
+                      {arduino.arduino_id}
+                    </td>
+                    <td
+                      style={{ padding: 12, borderBottom: "1px solid #dee2e6" }}
+                    >
+                      <span
+                        style={{
+                          fontFamily: "monospace",
+                          background: "#f8f9fa",
+                          padding: "4px 8px",
+                          borderRadius: 4,
+                          fontSize: 12,
+                        }}
+                      >
+                        {arduino.ip_address}
+                      </span>
+                    </td>
+                    <td
+                      style={{ padding: 12, borderBottom: "1px solid #dee2e6" }}
+                    >
+                      {arduino.location}
+                    </td>
+                    <td
+                      style={{ padding: 12, borderBottom: "1px solid #dee2e6" }}
+                    >
+                      <span
+                        style={{
+                          padding: "4px 8px",
+                          borderRadius: 4,
+                          fontSize: 12,
+                          fontWeight: 500,
+                          background:
+                            arduino.status === "active"
+                              ? "#d4edda"
+                              : arduino.status === "inactive"
+                              ? "#f8d7da"
+                              : "#fff3cd",
+                          color:
+                            arduino.status === "active"
+                              ? "#155724"
+                              : arduino.status === "inactive"
+                              ? "#721c24"
+                              : "#856404",
+                        }}
+                      >
+                        {arduino.status}
+                      </span>
+                    </td>
+                    <td
+                      style={{ padding: 12, borderBottom: "1px solid #dee2e6" }}
+                    >
+                      <span
+                        style={{
+                          padding: "4px 8px",
+                          borderRadius: 4,
+                          fontSize: 12,
+                          fontWeight: 500,
+                          background: "#e3f2fd",
+                          color: "#1976d2",
+                        }}
+                      >
+                        {arduino.sensor_count || 0} sensors
+                      </span>
+                    </td>
+                    <td
+                      style={{ padding: 12, borderBottom: "1px solid #dee2e6" }}
+                    >
+                      <button
+                        onClick={() => {
+                          const url = `http://${arduino.ip_address}`;
+                          setEspBaseUrl(url);
+                          try {
+                            localStorage.setItem("espBaseUrl", url);
+                          } catch {}
+                        }}
+                        style={{
+                          padding: "4px 8px",
+                          fontSize: 12,
+                          border: "1px solid #28a745",
+                          borderRadius: 4,
+                          background: "#28a745",
+                          color: "white",
+                          cursor: "pointer",
+                        }}
+                      >
+                        Use as ESP URL
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            {arduinos.length === 0 && (
+              <div
+                style={{
+                  padding: 40,
+                  textAlign: "center",
+                  color: "#6c757d",
+                }}
+              >
+                No Arduino devices found
+              </div>
+            )}
+          </div>
+        )}
+
+        {!showArduinoTable && (
+          <div style={{ textAlign: "center", color: "#6c757d", padding: 20 }}>
+            Click "Show Table" to view Arduino devices
+          </div>
+        )}
       </div>
 
       {/* ESP8266 Configuration Section */}
@@ -1663,27 +2002,43 @@ const AdminSensors = () => {
                   </select>
                 </td>
                 <td style={{ padding: 12, borderBottom: "1px solid #dee2e6" }}>
-                  <button
-                    onClick={() =>
-                      updateSensor(sensor.sensor_id, {
-                        status:
-                          sensor.status === "working"
-                            ? "maintenance"
-                            : "working",
-                      })
-                    }
-                    style={{
-                      padding: "4px 8px",
-                      border: "1px solid #007bff",
-                      borderRadius: 4,
-                      background: "#007bff",
-                      color: "white",
-                      cursor: "pointer",
-                      fontSize: 12,
-                    }}
-                  >
-                    Toggle Status
-                  </button>
+                  <div style={{ display: "flex", gap: 4 }}>
+                    <button
+                      onClick={() =>
+                        updateSensor(sensor.sensor_id, {
+                          status:
+                            sensor.status === "working"
+                              ? "maintenance"
+                              : "working",
+                        })
+                      }
+                      style={{
+                        padding: "4px 8px",
+                        border: "1px solid #007bff",
+                        borderRadius: 4,
+                        background: "#007bff",
+                        color: "white",
+                        cursor: "pointer",
+                        fontSize: 12,
+                      }}
+                    >
+                      Toggle Status
+                    </button>
+                    <button
+                      onClick={() => deleteSensor(sensor.sensor_id)}
+                      style={{
+                        padding: "4px 8px",
+                        border: "1px solid #dc3545",
+                        borderRadius: 4,
+                        background: "#dc3545",
+                        color: "white",
+                        cursor: "pointer",
+                        fontSize: 12,
+                      }}
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}

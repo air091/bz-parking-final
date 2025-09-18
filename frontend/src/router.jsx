@@ -1,6 +1,7 @@
 import { createBrowserRouter, Navigate } from "react-router-dom";
 import AdminLayout from "./layouts/AdminLayout.jsx";
 import AdminDashboard from "./pages/admin/Dashboard.jsx";
+import AdminArduino from "./pages/admin/Arduino";
 import AdminServices from "./pages/admin/Services.jsx";
 import AdminSensors from "./pages/admin/Sensors.jsx";
 import AdminParkingSlots from "./pages/admin/ParkingSlots.jsx";
@@ -17,6 +18,7 @@ export const router = createBrowserRouter([
     element: <AdminLayout />,
     children: [
       { index: true, element: <AdminDashboard /> },
+      { path: "arduino", element: <AdminArduino /> },
       { path: "services", element: <AdminServices /> },
       { path: "sensors", element: <AdminSensors /> },
       { path: "parking-slots", element: <AdminParkingSlots /> },
