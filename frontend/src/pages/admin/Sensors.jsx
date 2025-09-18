@@ -497,7 +497,7 @@ const AdminSensors = () => {
   useEffect(() => {
     let interval;
 
-    // Check if auto-detection was running before (from localStorage)
+    // Check if auto-detection was running before (from localStorage) - only on mount
     const wasAutoDetecting =
       localStorage.getItem("autoDistanceDetection") === "true";
     const savedInterval = localStorage.getItem("distanceDetectionInterval");
@@ -510,16 +510,15 @@ const AdminSensors = () => {
         savedInterval ? parseInt(savedInterval) : 3000
       );
       setEspBaseUrl(savedEspBaseUrl);
+    }
+  }, []); // Only run on mount
 
-      // Start the interval immediately
-      interval = setInterval(
-        () => {
-          fetchDistancesFromESP8266Direct();
-        },
-        savedInterval ? parseInt(savedInterval) : 3000
-      );
-    } else if (autoDistanceDetection && espBaseUrl) {
-      // Normal auto-detection start
+  // Separate effect for managing the interval
+  useEffect(() => {
+    let interval;
+
+    if (autoDistanceDetection && espBaseUrl) {
+      // Start the interval
       interval = setInterval(() => {
         fetchDistancesFromESP8266Direct();
       }, distanceDetectionInterval);
@@ -527,19 +526,24 @@ const AdminSensors = () => {
 
     return () => {
       if (interval) {
-        // Save the current state to localStorage before clearing
-        localStorage.setItem(
-          "autoDistanceDetection",
-          autoDistanceDetection.toString()
-        );
-        localStorage.setItem(
-          "distanceDetectionInterval",
-          distanceDetectionInterval.toString()
-        );
-        localStorage.setItem("espBaseUrl", espBaseUrl);
         clearInterval(interval);
       }
     };
+  }, [autoDistanceDetection, distanceDetectionInterval, espBaseUrl]);
+
+  // Separate effect for saving to localStorage
+  useEffect(() => {
+    if (autoDistanceDetection || distanceDetectionInterval || espBaseUrl) {
+      localStorage.setItem(
+        "autoDistanceDetection",
+        autoDistanceDetection.toString()
+      );
+      localStorage.setItem(
+        "distanceDetectionInterval",
+        distanceDetectionInterval.toString()
+      );
+      localStorage.setItem("espBaseUrl", espBaseUrl);
+    }
   }, [autoDistanceDetection, distanceDetectionInterval, espBaseUrl]);
 
   // Load ESP base URL from localStorage
@@ -631,8 +635,118 @@ const AdminSensors = () => {
   const sensorOff = () => hitEsp("/sensor/off");
 
   // ESP8266 API methods - only Sensor ON/OFF
-  const esp8266SensorOn = () => hitESP8266API("/sensor/on");
-  const esp8266SensorOff = () => hitESP8266API("/sensor/off");
+  const esp8266SensorOn = async () => {
+    setEsp8266Loading(true);
+    setError("");
+    setMessage("");
+    try {
+      const headers = {};
+      // Extract IP from espBaseUrl for manual mode
+      const targetIp = espBaseUrl
+        .replace(/^https?:\/\//, "")
+        .replace(/\/+$/, "");
+      if (targetIp) {
+        headers["X-Arduino-IP"] = targetIp;
+      }
+
+      const res = await fetch(`/api/esp8266/sensor/on`, {
+        method: "GET",
+        headers,
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(
+          data?.message || data?.error || `ESP8266 API error ${res.status}`
+        );
+      }
+
+      setEsp8266Data(data.data);
+      setMessage(`ESP8266: ${data.message}`);
+
+      // Update all sensors to "working" status
+      const updatePromises = sensors.map((sensor) =>
+        fetch(`/api/sensor/${sensor.sensor_id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            status: "working",
+          }),
+        })
+      );
+
+      await Promise.all(updatePromises);
+      console.log("✅ All sensors set to 'working' status");
+
+      // Auto-hide success message after 3 seconds
+      setTimeout(() => {
+        setMessage("");
+      }, 3000);
+
+      setTimeout(load, 500);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setEsp8266Loading(false);
+    }
+  };
+
+  const esp8266SensorOff = async () => {
+    setEsp8266Loading(true);
+    setError("");
+    setMessage("");
+    try {
+      const headers = {};
+      // Extract IP from espBaseUrl for manual mode
+      const targetIp = espBaseUrl
+        .replace(/^https?:\/\//, "")
+        .replace(/\/+$/, "");
+      if (targetIp) {
+        headers["X-Arduino-IP"] = targetIp;
+      }
+
+      const res = await fetch(`/api/esp8266/sensor/off`, {
+        method: "GET",
+        headers,
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(
+          data?.message || data?.error || `ESP8266 API error ${res.status}`
+        );
+      }
+
+      setEsp8266Data(data.data);
+      setMessage(`ESP8266: ${data.message}`);
+
+      // Update all sensors to "maintenance" status and set sensor_range to 0
+      const updatePromises = sensors.map((sensor) =>
+        fetch(`/api/sensor/${sensor.sensor_id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            status: "maintenance",
+            sensor_range: 0,
+          }),
+        })
+      );
+
+      await Promise.all(updatePromises);
+      console.log("✅ All sensors set to 'maintenance' status");
+
+      // Auto-hide success message after 3 seconds
+      setTimeout(() => {
+        setMessage("");
+      }, 3000);
+
+      setTimeout(load, 500);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setEsp8266Loading(false);
+    }
+  };
 
   const updateSensor = async (sensorId, updates) => {
     try {
