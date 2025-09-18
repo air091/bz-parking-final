@@ -289,8 +289,6 @@ class ParkingSlotModel {
           newStatus = "occupied";
         } else if (sensorData.sensor_range > 4) {
           newStatus = "available";
-        } else {
-          newStatus = "maintenance";
         }
       }
 

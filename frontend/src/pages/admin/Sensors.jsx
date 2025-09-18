@@ -62,43 +62,98 @@ const globalAutoDetection = async () => {
           `Parsed distances: Sensor1=${distance1}, Sensor2=${distance2}`
         );
 
-        if (distance1 !== null || distance2 !== null) {
-          // Update sensors in database
-          const updatePromises = [];
+        // Update sensors based on their data status
+        const updatePromises = [];
 
-          if (distance1 !== null) {
-            updatePromises.push(
-              fetch("/api/sensor/7", {
-                method: "PUT",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  sensor_range: distance1,
-                  status: "working",
-                }),
-              })
-            );
-          }
+        // Handle Sensor 1 (ID 7)
+        if (distance1 !== null && distance1 > 0) {
+          updatePromises.push(
+            fetch("/api/sensor/7", {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                sensor_range: distance1,
+                status: "working",
+              }),
+            })
+          );
+          console.log(
+            "✅ Sensor 7 updated to 'working' - distance:",
+            distance1
+          );
+        } else {
+          updatePromises.push(
+            fetch("/api/sensor/7", {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                sensor_range: 0,
+                status: "maintenance",
+              }),
+            })
+          );
+          console.log("⚠️ Sensor 7 set to 'maintenance' - no valid data");
+        }
 
-          if (distance2 !== null) {
-            updatePromises.push(
-              fetch("/api/sensor/6", {
-                method: "PUT",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  sensor_range: distance2,
-                  status: "working",
-                }),
-              })
-            );
-          }
+        // Handle Sensor 2 (ID 6)
+        if (distance2 !== null && distance2 > 0) {
+          updatePromises.push(
+            fetch("/api/sensor/6", {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                sensor_range: distance2,
+                status: "working",
+              }),
+            })
+          );
+          console.log(
+            "✅ Sensor 6 updated to 'working' - distance:",
+            distance2
+          );
+        } else {
+          updatePromises.push(
+            fetch("/api/sensor/6", {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                sensor_range: 0,
+                status: "maintenance",
+              }),
+            })
+          );
+          console.log("⚠️ Sensor 6 set to 'maintenance' - no valid data");
+        }
 
-          if (updatePromises.length > 0) {
-            await Promise.all(updatePromises);
-            console.log("✅ Updated sensor ranges from ESP8266 API");
-          }
+        // Execute all updates
+        if (updatePromises.length > 0) {
+          await Promise.all(updatePromises);
+          console.log("✅ Updated sensor ranges and status from ESP8266 API");
         }
       } else {
         console.log("ESP8266 returned TIMEOUT or empty response");
+        // Set all sensors to maintenance when no data is received
+        const updatePromises = [
+          fetch("/api/sensor/7", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              sensor_range: 0,
+              status: "maintenance",
+            }),
+          }),
+          fetch("/api/sensor/6", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              sensor_range: 0,
+              status: "maintenance",
+            }),
+          }),
+        ];
+
+        await Promise.all(updatePromises);
+        console.log("⚠️ All sensors set to 'maintenance' - no data received");
       }
     } else {
       console.log(`ESP8266 API error: ${res.status} ${res.statusText}`);
@@ -119,10 +174,25 @@ const AdminSensors = () => {
   const [esp8266Data, setEsp8266Data] = useState(null);
   const [esp8266Loading, setEsp8266Loading] = useState(false);
 
-  // New state for automatic distance detection
-  const [autoDistanceDetection, setAutoDistanceDetection] = useState(false);
-  const [distanceDetectionInterval, setDistanceDetectionInterval] =
-    useState(3000);
+  // New state for automatic distance detection - initialize from localStorage
+  const [autoDistanceDetection, setAutoDistanceDetection] = useState(() => {
+    try {
+      return localStorage.getItem("autoDistanceDetection") === "true";
+    } catch {
+      return false;
+    }
+  });
+
+  const [distanceDetectionInterval, setDistanceDetectionInterval] = useState(
+    () => {
+      try {
+        const saved = localStorage.getItem("distanceDetectionInterval");
+        return saved ? parseInt(saved) : 3000;
+      } catch {
+        return 3000;
+      }
+    }
+  );
 
   const load = async () => {
     try {
@@ -428,45 +498,101 @@ const AdminSensors = () => {
             `Parsed distances: Sensor1=${distance1}, Sensor2=${distance2}`
           );
 
-          if (distance1 !== null || distance2 !== null) {
-            // Update sensors in database
-            const updatePromises = [];
+          // Update sensors based on their data status
+          const updatePromises = [];
 
-            if (distance1 !== null) {
-              updatePromises.push(
-                fetch("/api/sensor/7", {
-                  method: "PUT",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    sensor_range: distance1,
-                    status: "working",
-                  }),
-                })
-              );
-            }
+          // Handle Sensor 1 (ID 7)
+          if (distance1 !== null && distance1 > 0) {
+            updatePromises.push(
+              fetch("/api/sensor/7", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  sensor_range: distance1,
+                  status: "working",
+                }),
+              })
+            );
+            console.log(
+              "✅ Sensor 7 updated to 'working' - distance:",
+              distance1
+            );
+          } else {
+            updatePromises.push(
+              fetch("/api/sensor/7", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  sensor_range: 0,
+                  status: "maintenance",
+                }),
+              })
+            );
+            console.log("⚠️ Sensor 7 set to 'maintenance' - no valid data");
+          }
 
-            if (distance2 !== null) {
-              updatePromises.push(
-                fetch("/api/sensor/6", {
-                  method: "PUT",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    sensor_range: distance2,
-                    status: "working",
-                  }),
-                })
-              );
-            }
+          // Handle Sensor 2 (ID 6)
+          if (distance2 !== null && distance2 > 0) {
+            updatePromises.push(
+              fetch("/api/sensor/6", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  sensor_range: distance2,
+                  status: "working",
+                }),
+              })
+            );
+            console.log(
+              "✅ Sensor 6 updated to 'working' - distance:",
+              distance2
+            );
+          } else {
+            updatePromises.push(
+              fetch("/api/sensor/6", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  sensor_range: 0,
+                  status: "maintenance",
+                }),
+              })
+            );
+            console.log("⚠️ Sensor 6 set to 'maintenance' - no valid data");
+          }
 
-            if (updatePromises.length > 0) {
-              await Promise.all(updatePromises);
-              console.log("✅ Updated sensor ranges from ESP8266 API");
-              // Reload sensors to show updated ranges
-              setTimeout(load, 500);
-            }
+          // Execute all updates
+          if (updatePromises.length > 0) {
+            await Promise.all(updatePromises);
+            console.log("✅ Updated sensor ranges and status from ESP8266 API");
+            // Reload sensors to show updated ranges
+            setTimeout(load, 500);
           }
         } else {
           console.log("ESP8266 returned TIMEOUT or empty response");
+          // Set all sensors to maintenance when no data is received
+          const updatePromises = [
+            fetch("/api/sensor/7", {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                sensor_range: 0,
+                status: "maintenance",
+              }),
+            }),
+            fetch("/api/sensor/6", {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                sensor_range: 0,
+                status: "maintenance",
+              }),
+            }),
+          ];
+
+          await Promise.all(updatePromises);
+          console.log("⚠️ All sensors set to 'maintenance' - no data received");
+          setTimeout(load, 500);
         }
       } else {
         console.log(`ESP8266 API error: ${res.status} ${res.statusText}`);
@@ -559,6 +685,14 @@ const AdminSensors = () => {
     try {
       localStorage.setItem("espBaseUrl", url);
       setEspBaseUrl(url);
+    } catch {}
+  };
+
+  // Save interval setting to localStorage when it changes
+  const saveDistanceDetectionInterval = (interval) => {
+    try {
+      localStorage.setItem("distanceDetectionInterval", interval.toString());
+      setDistanceDetectionInterval(interval);
     } catch {}
   };
 
@@ -664,26 +798,171 @@ const AdminSensors = () => {
       setEsp8266Data(data.data);
       setMessage(`ESP8266: ${data.message}`);
 
-      // Update all sensors to "working" status
-      const updatePromises = sensors.map((sensor) =>
-        fetch(`/api/sensor/${sensor.sensor_id}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            status: "working",
-          }),
-        })
-      );
+      // Wait a moment for sensors to stabilize, then check which ones are working
+      setTimeout(async () => {
+        try {
+          // Get current distance data to see which sensors are actually working
+          const distanceRes = await fetch(`/api/esp8266/distance/both`, {
+            method: "GET",
+            headers,
+          });
 
-      await Promise.all(updatePromises);
-      console.log("✅ All sensors set to 'working' status");
+          if (distanceRes.ok) {
+            const distanceData = await distanceRes.json();
+            const result = distanceData.result;
+
+            if (result && result !== "TIMEOUT") {
+              let distance1 = null;
+              let distance2 = null;
+
+              // Parse different formats that Arduino might send
+              // Format: "DISTANCES: S1=15 IN, S2=22 IN"
+              const distancesMatch = result.match(
+                /DISTANCES:\s*S1=(\d+)\s*IN,\s*S2=(\d+)\s*IN/i
+              );
+              if (distancesMatch) {
+                distance1 = parseInt(distancesMatch[1]);
+                distance2 = parseInt(distancesMatch[2]);
+              }
+
+              // Format: "DISTANCE1: 15 IN"
+              const distance1Match = result.match(/DISTANCE1:\s*(\d+)\s*IN/i);
+              if (distance1Match) {
+                distance1 = parseInt(distance1Match[1]);
+              }
+
+              // Format: "DISTANCE2: 22 IN"
+              const distance2Match = result.match(/DISTANCE2:\s*(\d+)\s*IN/i);
+              if (distance2Match) {
+                distance2 = parseInt(distance2Match[1]);
+              }
+
+              // Format: Plain numbers "15,22" or "15 22"
+              if (!distance1 && !distance2) {
+                const numbers = result.match(/(\d+)/g);
+                if (numbers && numbers.length >= 2) {
+                  distance1 = parseInt(numbers[0]);
+                  distance2 = parseInt(numbers[1]);
+                }
+              }
+
+              console.log(
+                `Sensor ON - Parsed distances: Sensor1=${distance1}, Sensor2=${distance2}`
+              );
+
+              // Update sensors based on their data status
+              const updatePromises = [];
+
+              // Handle Sensor 1 (ID 7)
+              if (distance1 !== null && distance1 > 0) {
+                updatePromises.push(
+                  fetch("/api/sensor/7", {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      status: "working",
+                      sensor_range: distance1,
+                    }),
+                  })
+                );
+                console.log(
+                  "✅ Sensor 7 (ID 7) set to 'working' - distance:",
+                  distance1
+                );
+              } else {
+                updatePromises.push(
+                  fetch("/api/sensor/7", {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      status: "maintenance",
+                      sensor_range: 0,
+                    }),
+                  })
+                );
+                console.log(
+                  "⚠️ Sensor 7 (ID 7) set to 'maintenance' - no valid data"
+                );
+              }
+
+              // Handle Sensor 2 (ID 6)
+              if (distance2 !== null && distance2 > 0) {
+                updatePromises.push(
+                  fetch("/api/sensor/6", {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      status: "working",
+                      sensor_range: distance2,
+                    }),
+                  })
+                );
+                console.log(
+                  "✅ Sensor 6 (ID 6) set to 'working' - distance:",
+                  distance2
+                );
+              } else {
+                updatePromises.push(
+                  fetch("/api/sensor/6", {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      status: "maintenance",
+                      sensor_range: 0,
+                    }),
+                  })
+                );
+                console.log(
+                  "⚠️ Sensor 6 (ID 6) set to 'maintenance' - no valid data"
+                );
+              }
+
+              // Execute all updates
+              await Promise.all(updatePromises);
+              console.log("✅ Updated all sensors based on their data status");
+
+              // Reload sensors to show updated ranges
+              setTimeout(load, 500);
+            } else {
+              // No data received - set all sensors to maintenance
+              console.log(
+                "⚠️ No distance data received - setting all sensors to maintenance"
+              );
+              const updatePromises = [
+                fetch("/api/sensor/7", {
+                  method: "PUT",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    status: "maintenance",
+                    sensor_range: 0,
+                  }),
+                }),
+                fetch("/api/sensor/6", {
+                  method: "PUT",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    status: "maintenance",
+                    sensor_range: 0,
+                  }),
+                }),
+              ];
+
+              await Promise.all(updatePromises);
+              console.log(
+                "✅ All sensors set to 'maintenance' - no data received"
+              );
+              setTimeout(load, 500);
+            }
+          }
+        } catch (e) {
+          console.log("Error checking sensor status after ON:", e.message);
+        }
+      }, 2000); // Wait 2 seconds for sensors to stabilize
 
       // Auto-hide success message after 3 seconds
       setTimeout(() => {
         setMessage("");
       }, 3000);
-
-      setTimeout(load, 500);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -990,9 +1269,16 @@ const AdminSensors = () => {
             </button>
             <select
               value={distanceDetectionInterval}
-              onChange={(e) =>
-                setDistanceDetectionInterval(Number(e.target.value))
-              }
+              onChange={(e) => {
+                const newInterval = Number(e.target.value);
+                setDistanceDetectionInterval(newInterval);
+                try {
+                  localStorage.setItem(
+                    "distanceDetectionInterval",
+                    newInterval.toString()
+                  );
+                } catch {}
+              }}
               disabled={!espBaseUrl}
               style={{
                 padding: "6px 12px",
