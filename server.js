@@ -12,6 +12,7 @@ const holdPaymentRouter = require("./routes/HoldPayment.routes.js");
 const parkingPaymentRouter = require("./routes/ParkingPayment.routes.js");
 const serviceRouter = require("./routes/Service.routes.js");
 const ocrRouter = require("./routes/OCR.routes.js");
+const esp8266Router = require("./routes/ESP8266.routes.js"); // Add ESP8266 routes
 
 // Import database connection
 const database = require("./bz_database/db.js");
@@ -34,6 +35,7 @@ app.use("/api/hold-payment", holdPaymentRouter);
 app.use("/api/parking-payment", parkingPaymentRouter);
 app.use("/api/service", serviceRouter);
 app.use("/api/ocr", ocrRouter);
+app.use("/api/esp8266", esp8266Router); // Add ESP8266 routes
 
 // Root endpoint
 app.get("/", (req, res) => {
@@ -51,6 +53,7 @@ app.get("/", (req, res) => {
       parkingPayment: "/api/parking-payment",
       service: "/api/service",
       ocr: "/api/ocr",
+      esp8266: "/api/esp8266", // Add ESP8266 endpoint
     },
     timestamp: new Date().toISOString(),
   });
@@ -99,6 +102,7 @@ const startServer = async () => {
       );
       console.log("  Service:     http://localhost:" + PORT + "/api/service");
       console.log("  OCR:         http://localhost:" + PORT + "/api/ocr");
+      console.log("  ESP8266:     http://localhost:" + PORT + "/api/esp8266"); // Add ESP8266 endpoint
     });
   } catch (error) {
     console.log("Failed to start server:", error.message);
