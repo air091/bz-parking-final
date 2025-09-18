@@ -380,6 +380,14 @@ class ParkingActivityModel {
         };
       }
 
+      // If is_paid was explicitly set to 0, remove any payment records for this activity
+      if (is_paid === 0) {
+        await parkingActivityDB.query(
+          `DELETE FROM parking_payment WHERE act_id = ?`,
+          [activityId]
+        );
+      }
+
       // If after the update both start_time and end_time are present, recalc amount
       const updatedActivityBefore = await this.getById(activityId);
       if (

@@ -267,6 +267,7 @@ class ParkingSlotModel {
   }
 
   // Update parking slot based on sensor data
+  // Update parking slot based on sensor data (sensor_range in inches)
   static async updateSlotBasedOnSensor(slotId, sensorData) {
     try {
       // Check if parking slot exists
@@ -280,18 +281,16 @@ class ParkingSlotModel {
 
       let newStatus = existingSlot.data.status;
 
-      // If sensor is in maintenance, parking slot should be maintenance
+      // Use inches for thresholding: <5 => occupied, >5 => available, =5 => maintenance
       if (sensorData.status === "maintenance") {
         newStatus = "maintenance";
       } else if (sensorData.status === "working") {
-        // Use 3 cm as threshold (no conversion needed since we're working in cm)
-        if (sensorData.sensor_range < 3) {
-          newStatus = "occupied"; // Object detected within 3 cm
-        } else if (sensorData.sensor_range > 3) {
-          newStatus = "available"; // No object detected beyond 3 cm
+        if (sensorData.sensor_range < 4) {
+          newStatus = "occupied";
+        } else if (sensorData.sensor_range > 4) {
+          newStatus = "available";
         } else {
-          // sensor_range = 3 cm exactly, keep current status or default to maintenance
-          newStatus = existingSlot.data.status || "maintenance";
+          newStatus = "maintenance";
         }
       }
 
@@ -315,7 +314,7 @@ class ParkingSlotModel {
         return {
           success: true,
           data: updatedSlot.data,
-          message: `Parking slot status updated to '${newStatus}' based on sensor data`,
+          message: `Parking slot status updated to '${newStatus}' based on sensor data (inches)`,
           statusChanged: true,
           previousStatus: existingSlot.data.status,
           newStatus: newStatus,

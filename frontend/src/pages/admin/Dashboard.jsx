@@ -306,7 +306,7 @@ const AdminDashboard = () => {
                 marginRight: "12px",
               }}
             >
-              <span style={{ color: "white", fontSize: "20px" }}>️</span>
+              <span style={{ color: "white", fontSize: "20px" }}></span>
             </div>
             <div>
               <h3 style={{ margin: 0, fontSize: "16px", color: "#6b7280" }}>
@@ -449,23 +449,9 @@ const AdminDashboard = () => {
                   color: "#1f2937",
                 }}
               >
-                {serviceStats?.total_services || 0}
+                {serviceStats?.overview?.total_services || 0}
               </p>
             </div>
-          </div>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              fontSize: "14px",
-            }}
-          >
-            <span style={{ color: "#10b981" }}>
-              Active: {serviceStats?.active_services || 0}
-            </span>
-            <span style={{ color: "#6b7280" }}>
-              Inactive: {serviceStats?.inactive_services || 0}
-            </span>
           </div>
         </div>
 

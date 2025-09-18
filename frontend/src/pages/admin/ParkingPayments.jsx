@@ -101,7 +101,9 @@ const AdminParkingPayments = () => {
           data?.message || data?.error || "Failed to load activities"
         );
       const items = Array.isArray(data?.data) ? data.data : [];
-      setActList(items);
+      // Filter to only show completed AND paid activities
+      const completedAndPaid = items.filter((activity) => activity.is_paid);
+      setActList(completedAndPaid);
     } catch (e) {
       // silent
     }

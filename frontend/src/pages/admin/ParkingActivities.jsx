@@ -18,6 +18,14 @@ const AdminParkingActivities = () => {
   const [endingId, setEndingId] = useState(null);
   const [endTime, setEndTime] = useState("");
 
+  // Add edit state variables
+  const [showEdit, setShowEdit] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [editUserId, setEditUserId] = useState("");
+  const [editStartTime, setEditStartTime] = useState("");
+  const [editEndTime, setEditEndTime] = useState("");
+  const [editIsPaid, setEditIsPaid] = useState(false);
+
   const [stats, setStats] = useState(null);
   const [users, setUsers] = useState([]); // add this
   const [services, setServices] = useState([]);
@@ -288,6 +296,99 @@ const AdminParkingActivities = () => {
       setPayingUserId(null);
       setPayMethod("gcash");
       await fetchStats();
+    } catch (e) {
+      setErr(e.message);
+    }
+  };
+
+  // Add edit functions
+  const openEditModal = (activity) => {
+    setEditingId(activity.act_id);
+    setEditUserId(activity.user_id.toString());
+    setEditStartTime(
+      activity.start_time ? toLocalInputValue(activity.start_time) : ""
+    );
+    setEditEndTime(
+      activity.end_time ? toLocalInputValue(activity.end_time) : ""
+    );
+    setEditIsPaid(!!activity.is_paid);
+    setShowEdit(true);
+  };
+
+  const updateActivity = async () => {
+    try {
+      setErr("");
+      setMsg("");
+
+      const updateData = {
+        user_id: parseInt(editUserId),
+        is_paid: editIsPaid ? 1 : 0,
+      };
+
+      if (editStartTime) {
+        updateData.start_time = editStartTime;
+      }
+      if (editEndTime) {
+        updateData.end_time = editEndTime;
+      }
+
+      const res = await fetch(`${apiBase}/${editingId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updateData),
+      });
+
+      const data = await res.json();
+      if (!res.ok)
+        throw new Error(
+          data?.message || data?.error || "Failed to update activity"
+        );
+
+      setMsg("Activity updated successfully");
+      autoHide();
+      setShowEdit(false);
+      setEditingId(null);
+      setEditUserId("");
+      setEditStartTime("");
+      setEditEndTime("");
+      setEditIsPaid(false);
+      load(); // Refresh the list
+    } catch (e) {
+      setErr(e.message);
+    }
+  };
+
+  const deleteActivity = async () => {
+    if (
+      !confirm(
+        "Are you sure you want to delete this activity? This action cannot be undone."
+      )
+    ) {
+      return;
+    }
+
+    try {
+      setErr("");
+      setMsg("");
+
+      const res = await fetch(`${apiBase}/${editingId}`, {
+        method: "DELETE",
+      });
+
+      const data = await res.json();
+      if (!res.ok)
+        throw new Error(
+          data?.message || data?.error || "Failed to delete activity"
+        );
+
+      setMsg("Activity deleted successfully");
+      autoHide();
+      setShowEdit(false);
+      setEditingId(null);
+      setEditUserId("");
+      setEditStartTime("");
+      setEditEndTime("");
+      load(); // Refresh the list
     } catch (e) {
       setErr(e.message);
     }
@@ -1159,6 +1260,22 @@ const AdminParkingActivities = () => {
                           Mark Paid
                         </button>
                       )}
+                      {/* Add Edit Button */}
+                      <button
+                        type="button"
+                        onClick={() => openEditModal(a)}
+                        style={{
+                          fontSize: 12,
+                          padding: "4px 8px",
+                          background: "#007bff",
+                          color: "white",
+                          border: "none",
+                          borderRadius: 4,
+                          cursor: "pointer",
+                        }}
+                      >
+                        Edit
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -1447,8 +1564,187 @@ const AdminParkingActivities = () => {
     );
   };
 
+  // Add Edit Modal component
+  const EditModal = () => {
+    if (!showEdit) return null;
+    return (
+      <div
+        style={{
+          position: "fixed",
+          inset: 0,
+          background: "rgba(0,0,0,0.5)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 1000,
+        }}
+      >
+        <div
+          style={{
+            background: "white",
+            padding: 24,
+            borderRadius: 8,
+            minWidth: 400,
+            maxWidth: 500,
+          }}
+        >
+          <h3 style={{ margin: "0 0 16px 0" }}>Edit Parking Activity</h3>
+
+          <div style={{ marginBottom: 16 }}>
+            <label
+              style={{
+                display: "block",
+                marginBottom: 4,
+                fontSize: 14,
+                fontWeight: 500,
+              }}
+            >
+              User ID
+            </label>
+            <input
+              type="number"
+              value={editUserId}
+              onChange={(e) => setEditUserId(e.target.value)}
+              style={{
+                width: "100%",
+                padding: 8,
+                border: "1px solid #ddd",
+                borderRadius: 4,
+              }}
+            />
+          </div>
+
+          <div style={{ marginBottom: 16 }}>
+            <label
+              style={{
+                display: "block",
+                marginBottom: 4,
+                fontSize: 14,
+                fontWeight: 500,
+              }}
+            >
+              Start Time
+            </label>
+            <input
+              type="datetime-local"
+              value={editStartTime}
+              onChange={(e) => setEditStartTime(e.target.value)}
+              style={{
+                width: "100%",
+                padding: 8,
+                border: "1px solid #ddd",
+                borderRadius: 4,
+              }}
+            />
+          </div>
+
+          <div style={{ marginBottom: 16 }}>
+            <label
+              style={{
+                display: "block",
+                marginBottom: 4,
+                fontSize: 14,
+                fontWeight: 500,
+              }}
+            >
+              End Time
+            </label>
+            <input
+              type="datetime-local"
+              value={editEndTime}
+              onChange={(e) => setEditEndTime(e.target.value)}
+              style={{
+                width: "100%",
+                padding: 8,
+                border: "1px solid #ddd",
+                borderRadius: 4,
+              }}
+            />
+          </div>
+
+          <div style={{ marginBottom: 16 }}>
+            <label
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+                fontSize: 14,
+                fontWeight: 500,
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={editIsPaid}
+                onChange={(e) => setEditIsPaid(e.target.checked)}
+              />
+              Is Paid
+            </label>
+          </div>
+
+          <div
+            style={{ display: "flex", gap: 8, justifyContent: "space-between" }}
+          >
+            <button
+              type="button"
+              onClick={deleteActivity}
+              style={{
+                padding: "6px 10px",
+                background: "#dc3545",
+                color: "white",
+                border: "none",
+                borderRadius: 4,
+                cursor: "pointer",
+              }}
+            >
+              Delete
+            </button>
+
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowEdit(false);
+                  setEditingId(null);
+                  setEditUserId("");
+                  setEditStartTime("");
+                  setEditEndTime("");
+                  setEditIsPaid(false);
+                }}
+                style={{
+                  padding: "6px 10px",
+                  background: "#6c757d",
+                  color: "white",
+                  border: "none",
+                  borderRadius: 4,
+                  cursor: "pointer",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={updateActivity}
+                style={{
+                  padding: "6px 10px",
+                  background: "#007bff",
+                  color: "white",
+                  border: "none",
+                  borderRadius: 4,
+                  cursor: "pointer",
+                }}
+                disabled={!editUserId.trim()}
+              >
+                Update
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
-    <div style={{ padding: 12 }}>
+    <div style={{ padding: 16 }}>
       <Header />
       <UsersCards />
       {stats && <Stats />}
@@ -1494,6 +1790,7 @@ const AdminParkingActivities = () => {
       <StartModal />
       <EndModal />
       <PayModal />
+      <EditModal />
     </div>
   );
 };

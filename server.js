@@ -11,6 +11,7 @@ const parkingActivityRouter = require("./routes/ParkingActivity.routes.js");
 const holdPaymentRouter = require("./routes/HoldPayment.routes.js");
 const parkingPaymentRouter = require("./routes/ParkingPayment.routes.js");
 const serviceRouter = require("./routes/Service.routes.js");
+const ocrRouter = require("./routes/OCR.routes.js");
 
 // Import database connection
 const database = require("./bz_database/db.js");
@@ -32,6 +33,7 @@ app.use("/api/parking-activity", parkingActivityRouter);
 app.use("/api/hold-payment", holdPaymentRouter);
 app.use("/api/parking-payment", parkingPaymentRouter);
 app.use("/api/service", serviceRouter);
+app.use("/api/ocr", ocrRouter);
 
 // Root endpoint
 app.get("/", (req, res) => {
@@ -48,6 +50,7 @@ app.get("/", (req, res) => {
       holdPayment: "/api/hold-payment",
       parkingPayment: "/api/parking-payment",
       service: "/api/service",
+      ocr: "/api/ocr",
     },
     timestamp: new Date().toISOString(),
   });
@@ -95,6 +98,7 @@ const startServer = async () => {
         "  Parking Payment: http://localhost:" + PORT + "/api/parking-payment"
       );
       console.log("  Service:     http://localhost:" + PORT + "/api/service");
+      console.log("  OCR:         http://localhost:" + PORT + "/api/ocr");
     });
   } catch (error) {
     console.log("Failed to start server:", error.message);
