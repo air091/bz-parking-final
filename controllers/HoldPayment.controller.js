@@ -148,6 +148,113 @@ class HoldPaymentController {
     }
   }
 
+  // Get hold payments by done status
+  static async getHoldPaymentsByDoneStatus(req, res) {
+    try {
+      const { status } = req.params;
+
+      if (status === undefined || status === null) {
+        return res.status(400).json({
+          success: false,
+          message: "Valid done status (true/false) is required",
+        });
+      }
+
+      const isDone = status === "true" || status === "1";
+      const result = await HoldPaymentModel.getByDoneStatus(isDone);
+
+      if (!result.success) {
+        return res.status(500).json({
+          success: false,
+          message: "Failed to retrieve hold payments",
+          error: result.error,
+        });
+      }
+
+      res.status(200).json({
+        success: true,
+        message: `Hold payments with done status '${isDone}' retrieved successfully`,
+        data: result.data,
+        count: result.count,
+        doneStatus: isDone,
+      });
+    } catch (error) {
+      console.error(
+        "Error in getHoldPaymentsByDoneStatus controller:",
+        error.message
+      );
+      res.status(500).json({
+        success: false,
+        message: "Internal server error",
+        error: error.message,
+      });
+    }
+  }
+
+  // Get pending hold payments
+  static async getPendingHoldPayments(req, res) {
+    try {
+      const result = await HoldPaymentModel.getPending();
+
+      if (!result.success) {
+        return res.status(500).json({
+          success: false,
+          message: "Failed to retrieve pending hold payments",
+          error: result.error,
+        });
+      }
+
+      res.status(200).json({
+        success: true,
+        message: "Pending hold payments retrieved successfully",
+        data: result.data,
+        count: result.count,
+      });
+    } catch (error) {
+      console.error(
+        "Error in getPendingHoldPayments controller:",
+        error.message
+      );
+      res.status(500).json({
+        success: false,
+        message: "Internal server error",
+        error: error.message,
+      });
+    }
+  }
+
+  // Get completed hold payments
+  static async getCompletedHoldPayments(req, res) {
+    try {
+      const result = await HoldPaymentModel.getCompleted();
+
+      if (!result.success) {
+        return res.status(500).json({
+          success: false,
+          message: "Failed to retrieve completed hold payments",
+          error: result.error,
+        });
+      }
+
+      res.status(200).json({
+        success: true,
+        message: "Completed hold payments retrieved successfully",
+        data: result.data,
+        count: result.count,
+      });
+    } catch (error) {
+      console.error(
+        "Error in getCompletedHoldPayments controller:",
+        error.message
+      );
+      res.status(500).json({
+        success: false,
+        message: "Internal server error",
+        error: error.message,
+      });
+    }
+  }
+
   // Get hold payments by amount range
   static async getHoldPaymentsByAmountRange(req, res) {
     try {
@@ -264,7 +371,7 @@ class HoldPaymentController {
   // Create new hold payment
   static async createHoldPayment(req, res) {
     try {
-      const { user_id, amount, payment_method } = req.body;
+      const { user_id, amount, payment_method, is_done } = req.body;
 
       // Validation
       if (!user_id) {
@@ -309,10 +416,19 @@ class HoldPaymentController {
         });
       }
 
+      // Validate is_done if provided
+      if (is_done !== undefined && typeof is_done !== "boolean") {
+        return res.status(400).json({
+          success: false,
+          message: "is_done must be a boolean value",
+        });
+      }
+
       const holdPaymentData = {
         user_id: parseInt(user_id),
         amount: parseFloat(amount),
         payment_method,
+        is_done,
       };
 
       const result = await HoldPaymentModel.create(holdPaymentData);
@@ -328,6 +444,7 @@ class HoldPaymentController {
         success: true,
         message: result.message,
         data: result.data,
+        availability: result.availability,
       });
     } catch (error) {
       console.error("Error in createHoldPayment controller:", error.message);
@@ -343,7 +460,7 @@ class HoldPaymentController {
   static async updateHoldPayment(req, res) {
     try {
       const { id } = req.params;
-      const { user_id, amount, payment_method } = req.body;
+      const { user_id, amount, payment_method, is_done } = req.body;
 
       if (!id || isNaN(id)) {
         return res.status(400).json({
@@ -380,11 +497,20 @@ class HoldPaymentController {
         });
       }
 
+      // Validate is_done if provided
+      if (is_done !== undefined && typeof is_done !== "boolean") {
+        return res.status(400).json({
+          success: false,
+          message: "is_done must be a boolean value",
+        });
+      }
+
       const updateData = {};
       if (user_id !== undefined) updateData.user_id = parseInt(user_id);
       if (amount !== undefined) updateData.amount = parseFloat(amount);
       if (payment_method !== undefined)
         updateData.payment_method = payment_method;
+      if (is_done !== undefined) updateData.is_done = is_done;
 
       if (Object.keys(updateData).length === 0) {
         return res.status(400).json({
@@ -410,6 +536,86 @@ class HoldPaymentController {
       });
     } catch (error) {
       console.error("Error in updateHoldPayment controller:", error.message);
+      res.status(500).json({
+        success: false,
+        message: "Internal server error",
+        error: error.message,
+      });
+    }
+  }
+
+  // Mark hold payment as done
+  static async markHoldPaymentAsDone(req, res) {
+    try {
+      const { id } = req.params;
+
+      if (!id || isNaN(id)) {
+        return res.status(400).json({
+          success: false,
+          message: "Valid hold payment ID is required",
+        });
+      }
+
+      const result = await HoldPaymentModel.markAsDone(parseInt(id));
+
+      if (!result.success) {
+        const statusCode = result.error.includes("not found") ? 404 : 400;
+        return res.status(statusCode).json({
+          success: false,
+          message: result.error,
+        });
+      }
+
+      res.status(200).json({
+        success: true,
+        message: result.message,
+        data: result.data,
+      });
+    } catch (error) {
+      console.error(
+        "Error in markHoldPaymentAsDone controller:",
+        error.message
+      );
+      res.status(500).json({
+        success: false,
+        message: "Internal server error",
+        error: error.message,
+      });
+    }
+  }
+
+  // Mark hold payment as pending
+  static async markHoldPaymentAsPending(req, res) {
+    try {
+      const { id } = req.params;
+
+      if (!id || isNaN(id)) {
+        return res.status(400).json({
+          success: false,
+          message: "Valid hold payment ID is required",
+        });
+      }
+
+      const result = await HoldPaymentModel.markAsPending(parseInt(id));
+
+      if (!result.success) {
+        const statusCode = result.error.includes("not found") ? 404 : 400;
+        return res.status(statusCode).json({
+          success: false,
+          message: result.error,
+        });
+      }
+
+      res.status(200).json({
+        success: true,
+        message: result.message,
+        data: result.data,
+      });
+    } catch (error) {
+      console.error(
+        "Error in markHoldPaymentAsPending controller:",
+        error.message
+      );
       res.status(500).json({
         success: false,
         message: "Internal server error",
@@ -476,6 +682,34 @@ class HoldPaymentController {
         "Error in getHoldPaymentStatistics controller:",
         error.message
       );
+      res.status(500).json({
+        success: false,
+        message: "Internal server error",
+        error: error.message,
+      });
+    }
+  }
+
+  // Get parking slot availability information
+  static async getSlotAvailability(req, res) {
+    try {
+      const result = await HoldPaymentModel.getSlotAvailability();
+
+      if (!result.success) {
+        return res.status(500).json({
+          success: false,
+          message: "Failed to retrieve slot availability",
+          error: result.error,
+        });
+      }
+
+      res.status(200).json({
+        success: true,
+        message: "Slot availability retrieved successfully",
+        data: result.data,
+      });
+    } catch (error) {
+      console.error("Error in getSlotAvailability controller:", error.message);
       res.status(500).json({
         success: false,
         message: "Internal server error",

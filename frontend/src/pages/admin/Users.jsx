@@ -9,6 +9,10 @@ const AdminUsers = () => {
   const [search, setSearch] = useState("");
   const searchInputRef = useRef(null);
 
+  // Auto-refresh functionality
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [refreshInterval, setRefreshInterval] = useState(10000); // 10 seconds
+
   const [editingUser, setEditingUser] = useState(null);
   const [editPlate, setEditPlate] = useState("");
   const [editServiceId, setEditServiceId] = useState(""); // "" | number
@@ -489,10 +493,14 @@ const AdminUsers = () => {
     }
   };
 
-  const load = async () => {
+  const loadUsers = async (isInitialLoad = false) => {
     try {
-      setLoading(true);
+      // Only show loading spinner on initial load, not on auto-refresh
+      if (isInitialLoad) {
+        setLoading(true);
+      }
       setError("");
+
       let url = apiBase;
       if (selectedService) {
         url = `${apiBase}/service/${selectedService}`;
@@ -505,7 +513,9 @@ const AdminUsers = () => {
     } catch (e) {
       setError(e.message);
     } finally {
-      setLoading(false);
+      if (isInitialLoad) {
+        setLoading(false);
+      }
     }
   };
 
@@ -513,7 +523,7 @@ const AdminUsers = () => {
     try {
       setError("");
       if (!search.trim()) {
-        await load();
+        await loadUsers();
         return;
       }
       const url = `${apiBase}/search?search=${encodeURIComponent(
@@ -536,18 +546,31 @@ const AdminUsers = () => {
 
   useEffect(() => {
     loadServices();
-    load();
+    loadUsers(true); // Initial load with loading spinner
   }, []);
 
   useEffect(() => {
     // reload when service filter changes
     if (!search.trim()) {
-      load();
+      loadUsers();
     } else {
       // re-apply search with the new filter
       searchUsers();
     }
   }, [selectedService]);
+
+  // Auto-refresh effect - silent refresh without loading spinner
+  useEffect(() => {
+    let interval;
+    if (autoRefresh) {
+      interval = setInterval(() => {
+        loadUsers(false); // Auto-refresh without loading spinner
+      }, refreshInterval);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [autoRefresh, refreshInterval]);
 
   const autoHideMessage = () => {
     setTimeout(() => setMessage(""), 3000);
@@ -576,7 +599,7 @@ const AdminUsers = () => {
       setShowCreate(false);
       setCreatePlate("");
       setCreateServiceId("");
-      await load();
+      await loadUsers();
     } catch (e) {
       setError(e.message);
     }
@@ -611,7 +634,7 @@ const AdminUsers = () => {
       setEditingUser(null);
       setEditPlate("");
       setEditServiceId("");
-      await load();
+      await loadUsers();
     } catch (e) {
       setError(e.message);
     }
@@ -629,7 +652,7 @@ const AdminUsers = () => {
       setMessage("User deleted successfully");
       autoHideMessage();
       setDeletingId(null);
-      await load();
+      await loadUsers();
     } catch (e) {
       setError(e.message);
     }
@@ -738,7 +761,7 @@ const AdminUsers = () => {
               onClick={() => {
                 setSearch("");
                 if (!selectedService) {
-                  load();
+                  loadUsers();
                 } else {
                   searchUsers();
                 }
@@ -780,7 +803,7 @@ const AdminUsers = () => {
             onClick={() => {
               setSelectedService("");
               setSearch("");
-              load();
+              loadUsers();
             }}
             style={{
               padding: "6px 10px",
@@ -1702,7 +1725,7 @@ const AdminUsers = () => {
                           `User created and parking activity started for ${ocrResult.letters}`
                         );
                         setTimeout(() => setMessage(""), 3000);
-                        await load();
+                        await loadUsers();
                       } catch (e) {
                         setError(e.message);
                       } finally {
@@ -1892,7 +1915,7 @@ const AdminUsers = () => {
       setEnhancedCreatePlate("");
       setEnhancedCreateServiceId("");
       setEnhancedCreateStartTime("");
-      await load();
+      await loadUsers();
     } catch (e) {
       setError(e.message);
     }
@@ -2077,36 +2100,107 @@ const AdminUsers = () => {
 
   return (
     <div style={{ padding: 12 }}>
-      <HeaderBar />
-      {(error || message) && (
-        <div style={{ marginBottom: 12 }}>
-          {error && (
-            <div
+      {/* Header with refresh controls */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: "20px",
+          background: "white",
+          padding: "16px",
+          borderRadius: "8px",
+          boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+        }}
+      >
+        <div>
+          <h1 style={{ margin: "0 0 8px 0", color: "#333" }}>
+            User Management
+          </h1>
+          <p style={{ margin: 0, color: "#666", fontSize: "14px" }}>
+            Manage user accounts and plate numbers
+          </p>
+        </div>
+
+        <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+          {/* Auto-refresh controls */}
+          <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+            <button
+              onClick={() => setAutoRefresh(!autoRefresh)}
               style={{
-                padding: "8px 12px",
-                background: "#ffe5e5",
-                color: "#a00",
-                border: "1px solid #f5c2c7",
-                borderRadius: 6,
-                marginBottom: 6,
+                padding: "8px 16px",
+                fontSize: "14px",
+                border: "1px solid #ccc",
+                borderRadius: "4px",
+                background: autoRefresh ? "#28a745" : "#fff",
+                color: autoRefresh ? "#fff" : "#333",
+                cursor: "pointer",
               }}
             >
-              {error}
-            </div>
-          )}
-          {message && (
-            <div
+              {autoRefresh ? "Auto Refresh ON" : "Auto Refresh OFF"}
+            </button>
+            <select
+              value={refreshInterval}
+              onChange={(e) => setRefreshInterval(Number(e.target.value))}
               style={{
-                padding: "8px 12px",
-                background: "#e6ffed",
-                color: "#0a6",
-                border: "1px solid #badbcc",
-                borderRadius: 6,
+                padding: "8px",
+                fontSize: "14px",
+                border: "1px solid #ccc",
+                borderRadius: "4px",
               }}
             >
-              {message}
-            </div>
-          )}
+              <option value={5000}>Refresh every 5s</option>
+              <option value={10000}>Refresh every 10s</option>
+              <option value={30000}>Refresh every 30s</option>
+              <option value={60000}>Refresh every 1m</option>
+            </select>
+          </div>
+
+          <button
+            onClick={() => loadUsers(true)}
+            disabled={loading}
+            style={{
+              padding: "8px 16px",
+              background: "#007bff",
+              color: "white",
+              border: "none",
+              borderRadius: "4px",
+              cursor: loading ? "not-allowed" : "pointer",
+              opacity: loading ? 0.6 : 1,
+            }}
+          >
+            {loading ? "Loading..." : "Refresh Now"}
+          </button>
+        </div>
+      </div>
+      {/* Error Message */}
+      {error && (
+        <div
+          style={{
+            padding: "16px",
+            background: "#ffe5e5",
+            color: "#a00",
+            border: "1px solid #f5b5b5",
+            borderRadius: "4px",
+            marginBottom: "16px",
+          }}
+        >
+          {error}
+        </div>
+      )}
+      {/* Success Message */}
+      {message && (
+        <div
+          style={{
+            padding: "16px",
+            background: "#d4edda",
+            color: "#155724",
+            border: "1px solid #c3e6cb",
+            borderRadius: "4px",
+            marginBottom: "16px",
+          }}
+        >
+          {message}
         </div>
       )}
       {renderCamera()}

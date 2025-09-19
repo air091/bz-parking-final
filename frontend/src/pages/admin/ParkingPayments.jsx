@@ -6,6 +6,10 @@ const AdminParkingPayments = () => {
   const [err, setErr] = useState("");
   const [msg, setMsg] = useState("");
 
+  // Auto-refresh functionality
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [refreshInterval, setRefreshInterval] = useState(15000); // 15 seconds
+
   const [tab, setTab] = useState("all"); // all | gcash | paymaya | cash
   const [userId, setUserId] = useState("");
   const [actId, setActId] = useState("");
@@ -54,9 +58,12 @@ const AdminParkingPayments = () => {
     }
   };
 
-  const load = async () => {
+  const load = async (isInitialLoad = false) => {
     try {
-      setLoading(true);
+      // Only show loading spinner on initial load, not on auto-refresh
+      if (isInitialLoad) {
+        setLoading(true);
+      }
       setErr("");
 
       let url = `${apiBase}`;
@@ -88,7 +95,9 @@ const AdminParkingPayments = () => {
     } catch (e) {
       setErr(e.message);
     } finally {
-      setLoading(false);
+      if (isInitialLoad) {
+        setLoading(false);
+      }
     }
   };
 
@@ -110,14 +119,25 @@ const AdminParkingPayments = () => {
   };
 
   useEffect(() => {
-    load();
+    load(true); // Initial load with loading spinner
     fetchStats();
     fetchCompletedActivities();
-  }, []);
+  }, [tab, userId, actId, dateFrom, dateTo]);
 
+  // Auto-refresh effect - silent refresh without loading spinner
   useEffect(() => {
-    load();
-  }, [tab]);
+    let interval;
+    if (autoRefresh) {
+      interval = setInterval(() => {
+        load(false); // Auto-refresh without loading spinner
+        fetchStats();
+        fetchCompletedActivities();
+      }, refreshInterval);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [autoRefresh, refreshInterval, tab, userId, actId, dateFrom, dateTo]);
 
   const applyFilters = async () => {
     await load();

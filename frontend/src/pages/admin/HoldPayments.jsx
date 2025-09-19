@@ -6,7 +6,11 @@ const AdminHoldPayments = () => {
   const [err, setErr] = useState("");
   const [msg, setMsg] = useState("");
 
-  const [tab, setTab] = useState("all"); // all | gcash | paymaya
+  // Auto-refresh functionality
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [refreshInterval, setRefreshInterval] = useState(10000); // 10 seconds
+
+  const [tab, setTab] = useState("all"); // all | gcash | paymaya | pending | completed
   const [userId, setUserId] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -17,11 +21,13 @@ const AdminHoldPayments = () => {
   const [createUserId, setCreateUserId] = useState("");
   const [createAmount, setCreateAmount] = useState("");
   const [createPaymentMethod, setCreatePaymentMethod] = useState("gcash");
+  const [createIsDone, setCreateIsDone] = useState(false);
 
   const [editingId, setEditingId] = useState(null);
   const [editUserId, setEditUserId] = useState("");
   const [editAmount, setEditAmount] = useState("");
   const [editPaymentMethod, setEditPaymentMethod] = useState("");
+  const [editIsDone, setEditIsDone] = useState(false);
 
   const [stats, setStats] = useState(null);
 
@@ -52,14 +58,19 @@ const AdminHoldPayments = () => {
     }
   };
 
-  const load = async () => {
+  const load = async (isInitialLoad = false) => {
     try {
-      setLoading(true);
+      // Only show loading spinner on initial load, not on auto-refresh
+      if (isInitialLoad) {
+        setLoading(true);
+      }
       setErr("");
 
       let url = `${apiBase}`;
       if (tab === "gcash") url = `${apiBase}/method/gcash`;
       if (tab === "paymaya") url = `${apiBase}/method/paymaya`;
+      if (tab === "pending") url = `${apiBase}/pending`;
+      if (tab === "completed") url = `${apiBase}/completed`;
 
       // precise filters override tab
       if (userId.trim()) {
@@ -89,18 +100,39 @@ const AdminHoldPayments = () => {
     } catch (e) {
       setErr(e.message);
     } finally {
-      setLoading(false);
+      if (isInitialLoad) {
+        setLoading(false);
+      }
     }
   };
 
   useEffect(() => {
-    load();
+    load(true); // Initial load with loading spinner
     fetchStats();
-  }, []);
+  }, [tab, userId, dateFrom, dateTo, minAmount, maxAmount]);
 
+  // Auto-refresh effect - silent refresh without loading spinner
   useEffect(() => {
-    load();
-  }, [tab]);
+    let interval;
+    if (autoRefresh) {
+      interval = setInterval(() => {
+        load(false); // Auto-refresh without loading spinner
+        fetchStats();
+      }, refreshInterval);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [
+    autoRefresh,
+    refreshInterval,
+    tab,
+    userId,
+    dateFrom,
+    dateTo,
+    minAmount,
+    maxAmount,
+  ]);
 
   const applyFilters = async () => {
     await load();
@@ -127,6 +159,7 @@ const AdminHoldPayments = () => {
         user_id: Number(createUserId),
         amount: Number(createAmount),
         payment_method: createPaymentMethod,
+        is_done: createIsDone,
       };
 
       const res = await fetch(apiBase, {
@@ -146,6 +179,7 @@ const AdminHoldPayments = () => {
       setCreateUserId("");
       setCreateAmount("");
       setCreatePaymentMethod("gcash");
+      setCreateIsDone(false);
       await load();
       await fetchStats();
     } catch (e) {
@@ -163,6 +197,7 @@ const AdminHoldPayments = () => {
       if (editUserId.trim()) body.user_id = Number(editUserId);
       if (editAmount.trim()) body.amount = Number(editAmount);
       if (editPaymentMethod) body.payment_method = editPaymentMethod;
+      body.is_done = editIsDone;
 
       if (Object.keys(body).length === 0) {
         throw new Error("At least one field must be provided for update");
@@ -185,6 +220,49 @@ const AdminHoldPayments = () => {
       setEditUserId("");
       setEditAmount("");
       setEditPaymentMethod("");
+      setEditIsDone(false);
+      await load();
+      await fetchStats();
+    } catch (e) {
+      setErr(e.message);
+    }
+  };
+
+  const markAsDone = async (id) => {
+    try {
+      setErr("");
+      setMsg("");
+      const res = await fetch(`${apiBase}/${id}/mark-done`, {
+        method: "PUT",
+      });
+      const data = await res.json();
+      if (!res.ok)
+        throw new Error(
+          data?.message || data?.error || "Failed to mark payment as done"
+        );
+      setMsg("Hold payment marked as done");
+      autoHide();
+      await load();
+      await fetchStats();
+    } catch (e) {
+      setErr(e.message);
+    }
+  };
+
+  const markAsPending = async (id) => {
+    try {
+      setErr("");
+      setMsg("");
+      const res = await fetch(`${apiBase}/${id}/mark-pending`, {
+        method: "PUT",
+      });
+      const data = await res.json();
+      if (!res.ok)
+        throw new Error(
+          data?.message || data?.error || "Failed to mark payment as pending"
+        );
+      setMsg("Hold payment marked as pending");
+      autoHide();
       await load();
       await fetchStats();
     } catch (e) {
@@ -258,6 +336,32 @@ const AdminHoldPayments = () => {
             }}
           >
             All
+          </button>
+          <button
+            onClick={() => setTab("pending")}
+            style={{
+              padding: "6px 10px",
+              borderRadius: 4,
+              border:
+                tab === "pending" ? "1px solid #007bff" : "1px solid #ddd",
+              background: tab === "pending" ? "#e9f2ff" : "white",
+              cursor: "pointer",
+            }}
+          >
+            Pending
+          </button>
+          <button
+            onClick={() => setTab("completed")}
+            style={{
+              padding: "6px 10px",
+              borderRadius: 4,
+              border:
+                tab === "completed" ? "1px solid #007bff" : "1px solid #ddd",
+              background: tab === "completed" ? "#e9f2ff" : "white",
+              cursor: "pointer",
+            }}
+          >
+            Completed
           </button>
           <button
             onClick={() => setTab("gcash")}
@@ -435,6 +539,38 @@ const AdminHoldPayments = () => {
         <div
           style={{ padding: 12, border: "1px solid #e0e0e0", borderRadius: 6 }}
         >
+          <div style={{ fontSize: 12, color: "#666" }}>Pending Count</div>
+          <div style={{ fontWeight: 700, color: "#ff9800" }}>
+            {s.pending_count || 0}
+          </div>
+        </div>
+        <div
+          style={{ padding: 12, border: "1px solid #e0e0e0", borderRadius: 6 }}
+        >
+          <div style={{ fontSize: 12, color: "#666" }}>Completed Count</div>
+          <div style={{ fontWeight: 700, color: "#4caf50" }}>
+            {s.completed_count || 0}
+          </div>
+        </div>
+        <div
+          style={{ padding: 12, border: "1px solid #e0e0e0", borderRadius: 6 }}
+        >
+          <div style={{ fontSize: 12, color: "#666" }}>Pending Total</div>
+          <div style={{ fontWeight: 700, color: "#ff9800" }}>
+            {money(s.pending_total)}
+          </div>
+        </div>
+        <div
+          style={{ padding: 12, border: "1px solid #e0e0e0", borderRadius: 6 }}
+        >
+          <div style={{ fontSize: 12, color: "#666" }}>Completed Total</div>
+          <div style={{ fontWeight: 700, color: "#4caf50" }}>
+            {money(s.completed_total)}
+          </div>
+        </div>
+        <div
+          style={{ padding: 12, border: "1px solid #e0e0e0", borderRadius: 6 }}
+        >
           <div style={{ fontSize: 12, color: "#666" }}>GCash Count</div>
           <div style={{ fontWeight: 700 }}>{s.gcash_count || 0}</div>
         </div>
@@ -512,6 +648,15 @@ const AdminHoldPayments = () => {
                 }}
               >
                 Payment Method
+              </th>
+              <th
+                style={{
+                  textAlign: "left",
+                  borderBottom: "1px solid #ddd",
+                  padding: "8px 4px",
+                }}
+              >
+                Status
               </th>
               <th
                 style={{
@@ -615,6 +760,25 @@ const AdminHoldPayments = () => {
                     padding: "6px 4px",
                   }}
                 >
+                  <span
+                    style={{
+                      padding: "2px 6px",
+                      borderRadius: 4,
+                      background: item.is_done ? "#e8f5e8" : "#fff3cd",
+                      color: item.is_done ? "#155724" : "#856404",
+                      fontSize: 12,
+                      fontWeight: 600,
+                    }}
+                  >
+                    {item.is_done ? "Completed" : "Pending"}
+                  </span>
+                </td>
+                <td
+                  style={{
+                    borderBottom: "1px solid #f0f0f0",
+                    padding: "6px 4px",
+                  }}
+                >
                   {fmt(item.created_at)}
                 </td>
                 <td
@@ -631,7 +795,7 @@ const AdminHoldPayments = () => {
                     padding: "6px 4px",
                   }}
                 >
-                  <div style={{ display: "flex", gap: 4 }}>
+                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
                     <button
                       type="button"
                       onClick={() => {
@@ -639,6 +803,7 @@ const AdminHoldPayments = () => {
                         setEditUserId(item.user_id.toString());
                         setEditAmount(item.amount.toString());
                         setEditPaymentMethod(item.payment_method);
+                        setEditIsDone(item.is_done || false);
                       }}
                       style={{
                         fontSize: 12,
@@ -652,6 +817,39 @@ const AdminHoldPayments = () => {
                     >
                       Edit
                     </button>
+                    {!item.is_done ? (
+                      <button
+                        type="button"
+                        onClick={() => markAsDone(item.hold_payment_id)}
+                        style={{
+                          fontSize: 12,
+                          padding: "4px 8px",
+                          background: "#28a745",
+                          color: "white",
+                          border: "none",
+                          borderRadius: 4,
+                          cursor: "pointer",
+                        }}
+                      >
+                        Mark Done
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => markAsPending(item.hold_payment_id)}
+                        style={{
+                          fontSize: 12,
+                          padding: "4px 8px",
+                          background: "#ff9800",
+                          color: "white",
+                          border: "none",
+                          borderRadius: 4,
+                          cursor: "pointer",
+                        }}
+                      >
+                        Mark Pending
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => deleteHoldPayment(item.hold_payment_id)}
@@ -673,7 +871,7 @@ const AdminHoldPayments = () => {
             ))}
             {items.length === 0 && !loading && (
               <tr>
-                <td colSpan={8} style={{ padding: 12, color: "#666" }}>
+                <td colSpan={9} style={{ padding: 12, color: "#666" }}>
                   No hold payments found.
                 </td>
               </tr>
@@ -768,6 +966,17 @@ const AdminHoldPayments = () => {
               <option value="paymaya">PayMaya</option>
             </select>
           </div>
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <input
+                type="checkbox"
+                checked={createIsDone}
+                onChange={(e) => setCreateIsDone(e.target.checked)}
+                style={{ margin: 0 }}
+              />
+              <span style={{ fontWeight: "bold" }}>Mark as completed</span>
+            </label>
+          </div>
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
             <button
               type="button"
@@ -776,6 +985,7 @@ const AdminHoldPayments = () => {
                 setCreateUserId("");
                 setCreateAmount("");
                 setCreatePaymentMethod("gcash");
+                setCreateIsDone(false);
               }}
               style={{
                 padding: "6px 10px",
@@ -894,6 +1104,17 @@ const AdminHoldPayments = () => {
               <option value="paymaya">PayMaya</option>
             </select>
           </div>
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <input
+                type="checkbox"
+                checked={editIsDone}
+                onChange={(e) => setEditIsDone(e.target.checked)}
+                style={{ margin: 0 }}
+              />
+              <span style={{ fontWeight: "bold" }}>Mark as completed</span>
+            </label>
+          </div>
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
             <button
               type="button"
@@ -902,6 +1123,7 @@ const AdminHoldPayments = () => {
                 setEditUserId("");
                 setEditAmount("");
                 setEditPaymentMethod("");
+                setEditIsDone(false);
               }}
               style={{
                 padding: "6px 10px",
@@ -934,39 +1156,108 @@ const AdminHoldPayments = () => {
   };
 
   return (
-    <div style={{ padding: 12 }}>
-      <Header />
-      {stats && <Stats />}
+    <div style={{ padding: "20px" }}>
+      {/* Header with refresh controls */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: "20px",
+          background: "white",
+          padding: "16px",
+          borderRadius: "8px",
+          boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+        }}
+      >
+        <div>
+          <h1 style={{ margin: "0 0 8px 0", color: "#333" }}>Hold Payments</h1>
+          <p style={{ margin: 0, color: "#666", fontSize: "14px" }}>
+            Manage parking slot reservation requests
+          </p>
+        </div>
 
-      {(err || msg) && (
-        <div style={{ marginBottom: 12 }}>
-          {err && (
-            <div
+        <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+          {/* Auto-refresh controls */}
+          <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+            <button
+              onClick={() => setAutoRefresh(!autoRefresh)}
               style={{
-                padding: "8px 12px",
-                background: "#ffe5e5",
-                color: "#a00",
-                border: "1px solid #f5c2c7",
-                borderRadius: 6,
-                marginBottom: 6,
+                padding: "8px 16px",
+                fontSize: "14px",
+                border: "1px solid #ccc",
+                borderRadius: "4px",
+                background: autoRefresh ? "#28a745" : "#fff",
+                color: autoRefresh ? "#fff" : "#333",
+                cursor: "pointer",
               }}
             >
-              {err}
-            </div>
-          )}
-          {msg && (
-            <div
+              {autoRefresh ? "Auto Refresh ON" : "Auto Refresh OFF"}
+            </button>
+            <select
+              value={refreshInterval}
+              onChange={(e) => setRefreshInterval(Number(e.target.value))}
               style={{
-                padding: "8px 12px",
-                background: "#e6ffed",
-                color: "#0a6",
-                border: "1px solid #badbcc",
-                borderRadius: 6,
+                padding: "8px",
+                fontSize: "14px",
+                border: "1px solid #ccc",
+                borderRadius: "4px",
               }}
             >
-              {msg}
-            </div>
-          )}
+              <option value={5000}>Refresh every 5s</option>
+              <option value={10000}>Refresh every 10s</option>
+              <option value={30000}>Refresh every 30s</option>
+              <option value={60000}>Refresh every 1m</option>
+            </select>
+          </div>
+
+          <button
+            onClick={() => load(true)}
+            disabled={loading}
+            style={{
+              padding: "8px 16px",
+              background: "#007bff",
+              color: "white",
+              border: "none",
+              borderRadius: "4px",
+              cursor: loading ? "not-allowed" : "pointer",
+              opacity: loading ? 0.6 : 1,
+            }}
+          >
+            {loading ? "Loading..." : "Refresh Now"}
+          </button>
+        </div>
+      </div>
+
+      {/* Error Message */}
+      {err && (
+        <div
+          style={{
+            padding: "16px",
+            background: "#ffe5e5",
+            color: "#a00",
+            border: "1px solid #f5b5b5",
+            borderRadius: "4px",
+            marginBottom: "16px",
+          }}
+        >
+          {err}
+        </div>
+      )}
+
+      {/* Success Message */}
+      {msg && (
+        <div
+          style={{
+            padding: "16px",
+            background: "#d4edda",
+            color: "#155724",
+            border: "1px solid #c3e6cb",
+            borderRadius: "4px",
+            marginBottom: "16px",
+          }}
+        >
+          {msg}
         </div>
       )}
 

@@ -4,6 +4,7 @@ const AdminParkingSlots = () => {
   const [slots, setSlots] = useState([]);
   const [services, setServices] = useState([]);
   const [sensors, setSensors] = useState([]);
+  const [slotAvailability, setSlotAvailability] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -30,6 +31,18 @@ const AdminParkingSlots = () => {
       setError(e.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadSlotAvailability = async () => {
+    try {
+      const res = await fetch("/api/hold-payment/availability");
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setSlotAvailability(data.data);
+      }
+    } catch (e) {
+      console.error("Failed to load slot availability:", e.message);
     }
   };
 
@@ -61,6 +74,7 @@ const AdminParkingSlots = () => {
     load();
     loadServices();
     loadSensors();
+    loadSlotAvailability();
   }, []);
 
   // Add auto-refresh effect
@@ -69,6 +83,7 @@ const AdminParkingSlots = () => {
     if (autoRefresh) {
       interval = setInterval(() => {
         load();
+        loadSlotAvailability();
       }, refreshInterval);
     }
     return () => {
@@ -106,6 +121,126 @@ const AdminParkingSlots = () => {
     if (!str) return ""; // handle empty string
     return str.charAt(0).toUpperCase() + str.slice(1);
   }
+
+  const AvailabilityStats = () => {
+    if (!slotAvailability) return null;
+
+    const {
+      totalSlots,
+      availableSlots,
+      occupiedSlots,
+      maintenanceSlots,
+      pendingHolds,
+      completedHolds,
+      availableForHolding,
+    } = slotAvailability;
+
+    return (
+      <div
+        style={{
+          display: "flex",
+          gap: 12,
+          flexWrap: "wrap",
+          marginBottom: 16,
+          padding: 16,
+          background: "#f8f9fa",
+          borderRadius: 8,
+          border: "1px solid #e9ecef",
+        }}
+      >
+        <div
+          style={{
+            padding: 12,
+            border: "1px solid #e0e0e0",
+            borderRadius: 6,
+            background: "white",
+            minWidth: 120,
+          }}
+        >
+          <div style={{ fontSize: 12, color: "#666" }}>Total Slots</div>
+          <div style={{ fontWeight: 700, fontSize: 18 }}>{totalSlots}</div>
+        </div>
+        <div
+          style={{
+            padding: 12,
+            border: "1px solid #e0e0e0",
+            borderRadius: 6,
+            background: "white",
+            minWidth: 120,
+          }}
+        >
+          <div style={{ fontSize: 12, color: "#666" }}>Available</div>
+          <div style={{ fontWeight: 700, fontSize: 18, color: "#28a745" }}>
+            {availableSlots}
+          </div>
+        </div>
+        <div
+          style={{
+            padding: 12,
+            border: "1px solid #e0e0e0",
+            borderRadius: 6,
+            background: "white",
+            minWidth: 120,
+          }}
+        >
+          <div style={{ fontSize: 12, color: "#666" }}>Occupied</div>
+          <div style={{ fontWeight: 700, fontSize: 18, color: "#dc3545" }}>
+            {occupiedSlots}
+          </div>
+        </div>
+        <div
+          style={{
+            padding: 12,
+            border: "1px solid #e0e0e0",
+            borderRadius: 6,
+            background: "white",
+            minWidth: 120,
+          }}
+        >
+          <div style={{ fontSize: 12, color: "#666" }}>Maintenance</div>
+          <div style={{ fontWeight: 700, fontSize: 18, color: "#ffc107" }}>
+            {maintenanceSlots}
+          </div>
+        </div>
+        <div
+          style={{
+            padding: 12,
+            border: "1px solid #e0e0e0",
+            borderRadius: 6,
+            background: "white",
+            minWidth: 120,
+          }}
+        >
+          <div style={{ fontSize: 12, color: "#666" }}>Pending Holds</div>
+          <div style={{ fontWeight: 700, fontSize: 18, color: "#ff9800" }}>
+            {pendingHolds}
+          </div>
+        </div>
+        <div
+          style={{
+            padding: 12,
+            border: "1px solid #e0e0e0",
+            borderRadius: 6,
+            background: "white",
+            minWidth: 120,
+          }}
+        >
+          <div style={{ fontSize: 12, color: "#666" }}>
+            Available for Holding
+          </div>
+          <div
+            style={{
+              fontWeight: 700,
+              fontSize: 18,
+              color: availableForHolding > 0 ? "#28a745" : "#dc3545",
+            }}
+          >
+            {availableForHolding}
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   const renderTable = () => (
     <div style={{ overflowX: "auto" }}>
@@ -204,24 +339,25 @@ const AdminParkingSlots = () => {
               >
                 <span
                   style={{
-                    padding: "2px 8px",
-                    borderRadius: "4px",
-                    fontSize: "12px",
+                    padding: "2px 6px",
+                    borderRadius: 4,
                     background:
                       s.status === "available"
                         ? "#e6ffed"
                         : s.status === "occupied"
                         ? "#ffe5e5"
-                        : "#f0f0f0",
+                        : "#fff3cd",
                     color:
                       s.status === "available"
                         ? "#0a6"
                         : s.status === "occupied"
                         ? "#a00"
-                        : "#666",
+                        : "#856404",
+                    fontSize: 12,
+                    fontWeight: 600,
                   }}
                 >
-                  {s.status}
+                  {capitalizeFirstLetter(s.status)}
                 </span>
               </td>
               <td
@@ -230,7 +366,22 @@ const AdminParkingSlots = () => {
                   padding: "6px 4px",
                 }}
               >
-                {s.sensor_id ?? "-"}
+                {s.sensor_id ? (
+                  <span
+                    style={{
+                      padding: "2px 6px",
+                      borderRadius: 4,
+                      background: "#e3f2fd",
+                      color: "#1976d2",
+                      fontSize: 12,
+                      fontWeight: 600,
+                    }}
+                  >
+                    #{s.sensor_id}
+                  </span>
+                ) : (
+                  "-"
+                )}
               </td>
               <td
                 style={{
@@ -242,18 +393,11 @@ const AdminParkingSlots = () => {
                   <span
                     style={{
                       padding: "2px 6px",
-                      borderRadius: "4px",
-                      fontSize: "11px",
-                      background:
-                        s.vehicle_type.toLowerCase().includes("bike") ||
-                        s.vehicle_type.toLowerCase().includes("motorcycle")
-                          ? "#fff3cd"
-                          : "#e3f2fd",
-                      color:
-                        s.vehicle_type.toLowerCase().includes("bike") ||
-                        s.vehicle_type.toLowerCase().includes("motorcycle")
-                          ? "#856404"
-                          : "#1976d2",
+                      borderRadius: 4,
+                      background: "#f0f0f0",
+                      color: "#666",
+                      fontSize: 12,
+                      fontWeight: 600,
                     }}
                   >
                     {s.vehicle_type}
@@ -268,7 +412,9 @@ const AdminParkingSlots = () => {
                   padding: "6px 4px",
                 }}
               >
-                {s.created_at ? new Date(s.created_at).toLocaleString() : "-"}
+                {s.created_at
+                  ? new Date(s.created_at).toLocaleDateString()
+                  : "-"}
               </td>
               <td
                 style={{
@@ -283,33 +429,16 @@ const AdminParkingSlots = () => {
                       setEditMode("service");
                     }}
                     style={{
-                      fontSize: "12px",
+                      fontSize: 12,
                       padding: "4px 8px",
                       background: "#007bff",
                       color: "white",
                       border: "none",
-                      borderRadius: "4px",
+                      borderRadius: 4,
                       cursor: "pointer",
                     }}
                   >
-                    Edit Service
-                  </button>
-                  <button
-                    onClick={() => {
-                      setEditingSlot(s);
-                      setEditMode("sensor");
-                    }}
-                    style={{
-                      fontSize: "12px",
-                      padding: "4px 8px",
-                      background: "#28a745",
-                      color: "white",
-                      border: "none",
-                      borderRadius: "4px",
-                      cursor: "pointer",
-                    }}
-                  >
-                    Edit Sensor
+                    Edit
                   </button>
                 </div>
               </td>
@@ -655,159 +784,332 @@ const AdminParkingSlots = () => {
   };
 
   return (
-    <div>
+    <div style={{ padding: 12 }}>
+      {/* Header with tabs and controls */}
       <div
         style={{
           display: "flex",
-          justifyContent: "space-between",
+          flexWrap: "wrap",
+          gap: 8,
           alignItems: "center",
-          marginBottom: 16,
+          justifyContent: "space-between",
+          marginBottom: 12,
         }}
       >
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <h1 style={{ margin: 0 }}>Parking Slots</h1>
-          {autoRefresh && (
-            <span
-              style={{
-                fontSize: 12,
-                color: "#28a745",
-                background: "#e6ffed",
-                padding: "2px 6px",
-                borderRadius: 4,
-                border: "1px solid #badbcc",
-              }}
-            >
-              Auto-refresh ON
-            </span>
-          )}
+          <h2 style={{ margin: 0 }}>Parking Slots</h2>
+          <span style={{ color: "#666", fontSize: 14 }}>
+            {loading
+              ? "Loading..."
+              : `${slots.length} slot${slots.length === 1 ? "" : "s"}`}
+          </span>
         </div>
 
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          {/* Auto-refresh controls */}
-          <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+        <div
+          style={{
+            display: "flex",
+            gap: 8,
+            alignItems: "center",
+            flexWrap: "wrap",
+          }}
+        >
+          <div style={{ display: "flex", gap: 4 }}>
             <button
-              onClick={() => setAutoRefresh(!autoRefresh)}
+              onClick={() => setActiveTab("table")}
               style={{
-                padding: "4px 8px",
-                fontSize: 12,
-                border: "1px solid #ccc",
+                padding: "6px 10px",
                 borderRadius: 4,
-                background: autoRefresh ? "#28a745" : "#fff",
-                color: autoRefresh ? "#fff" : "#333",
+                border:
+                  activeTab === "table"
+                    ? "1px solid #007bff"
+                    : "1px solid #ddd",
+                background: activeTab === "table" ? "#e9f2ff" : "white",
                 cursor: "pointer",
               }}
             >
-              {autoRefresh ? "Stop Auto" : "Auto Refresh"}
+              Table
             </button>
-            <select
-              value={refreshInterval}
-              onChange={(e) => setRefreshInterval(Number(e.target.value))}
+            <button
+              onClick={() => setActiveTab("grid")}
               style={{
-                padding: "4px 8px",
-                fontSize: 12,
-                border: "1px solid #ccc",
+                padding: "6px 10px",
                 borderRadius: 4,
+                border:
+                  activeTab === "grid" ? "1px solid #007bff" : "1px solid #ddd",
+                background: activeTab === "grid" ? "#e9f2ff" : "white",
+                cursor: "pointer",
               }}
             >
-              <option value={2000}>2s</option>
-              <option value={5000}>5s</option>
-              <option value={10000}>10s</option>
-              <option value={30000}>30s</option>
-            </select>
+              Grid
+            </button>
           </div>
 
-          <button
-            onClick={load}
-            disabled={loading}
-            style={{
-              padding: "8px 16px",
-              background: "#007bff",
-              color: "white",
-              border: "none",
-              borderRadius: "4px",
-              cursor: loading ? "not-allowed" : "pointer",
-              opacity: loading ? 0.6 : 1,
-            }}
-          >
-            {loading ? "Loading..." : "Refresh"}
-          </button>
+          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
+              <input
+                type="checkbox"
+                checked={autoRefresh}
+                onChange={(e) => setAutoRefresh(e.target.checked)}
+              />
+              <span style={{ fontSize: 14 }}>Auto-refresh</span>
+            </label>
+            {autoRefresh && (
+              <select
+                value={refreshInterval}
+                onChange={(e) => setRefreshInterval(Number(e.target.value))}
+                style={{
+                  padding: "4px 8px",
+                  border: "1px solid #ddd",
+                  borderRadius: 4,
+                  fontSize: 12,
+                }}
+              >
+                <option value={3000}>3s</option>
+                <option value={5000}>5s</option>
+                <option value={10000}>10s</option>
+                <option value={30000}>30s</option>
+              </select>
+            )}
+          </div>
         </div>
       </div>
 
-      {error && (
-        <div
-          style={{
-            padding: 8,
-            background: "#ffe5e5",
-            color: "#a00",
-            border: "1px solid #f5b5b5",
-            marginBottom: 12,
-          }}
-        >
-          {error}
-        </div>
-      )}
-      {message && (
-        <div
-          style={{
-            padding: 8,
-            background: "#e6ffed",
-            color: "#0a6",
-            border: "1px solid #b5f5c5",
-            marginBottom: 12,
-          }}
-        >
-          {message}
-        </div>
-      )}
+      {/* Availability Stats */}
+      <AvailabilityStats />
 
-      {/* Tabs */}
-      <div style={{ marginBottom: 20 }}>
-        <div
-          style={{ display: "flex", gap: 0, borderBottom: "1px solid #ddd" }}
-        >
-          {[
-            { key: "table", label: "Table" },
-            { key: "list", label: "List" },
-            { key: "map", label: "Map" },
-          ].map((tab) => (
-            <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
+      {/* Error/Message Display */}
+      {(error || message) && (
+        <div style={{ marginBottom: 12 }}>
+          {error && (
+            <div
               style={{
-                padding: "12px 24px",
-                border: "none",
-                background: activeTab === tab.key ? "#007bff" : "transparent",
-                color: activeTab === tab.key ? "white" : "#666",
-                cursor: "pointer",
-                borderBottom:
-                  activeTab === tab.key
-                    ? "2px solid #007bff"
-                    : "2px solid transparent",
-                borderRadius: "4px 4px 0 0",
+                padding: "8px 12px",
+                background: "#ffe5e5",
+                color: "#a00",
+                border: "1px solid #f5c2c7",
+                borderRadius: 6,
+                marginBottom: 6,
               }}
             >
-              {tab.label}
-            </button>
-          ))}
+              {error}
+            </div>
+          )}
+          {message && (
+            <div
+              style={{
+                padding: "8px 12px",
+                background: "#e6ffed",
+                color: "#0a6",
+                border: "1px solid #badbcc",
+                borderRadius: 6,
+              }}
+            >
+              {message}
+            </div>
+          )}
         </div>
-      </div>
+      )}
 
       {/* Content */}
       {loading ? (
-        <p>Loading...</p>
-      ) : slots.length === 0 ? (
-        <p>No parking slots found.</p>
+        <div style={{ padding: 12, color: "#666" }}>Loading...</div>
+      ) : activeTab === "table" ? (
+        renderTable()
       ) : (
-        <>
-          {activeTab === "table" && renderTable()}
-          {activeTab === "list" && renderList()}
-          {activeTab === "map" && renderMap()}
-        </>
+        renderGrid()
       )}
 
       {/* Edit Modal */}
-      {renderEditModal()}
+      {editingSlot && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+          }}
+        >
+          <div
+            style={{
+              background: "white",
+              padding: 24,
+              borderRadius: 8,
+              minWidth: 400,
+              maxWidth: 600,
+            }}
+          >
+            <h3 style={{ margin: "0 0 16px 0" }}>
+              Edit Parking Slot #{editingSlot.slot_id}
+            </h3>
+            <p style={{ margin: "0 0 16px 0", color: "#666" }}>
+              {editingSlot.location}
+            </p>
+
+            <div style={{ marginBottom: 16 }}>
+              <label
+                style={{
+                  display: "block",
+                  marginBottom: 8,
+                  fontWeight: "bold",
+                }}
+              >
+                Edit Mode
+              </label>
+              <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+                <button
+                  onClick={() => setEditMode("service")}
+                  style={{
+                    padding: "6px 12px",
+                    borderRadius: 4,
+                    border:
+                      editMode === "service"
+                        ? "1px solid #007bff"
+                        : "1px solid #ddd",
+                    background: editMode === "service" ? "#e9f2ff" : "white",
+                    cursor: "pointer",
+                  }}
+                >
+                  Service
+                </button>
+                <button
+                  onClick={() => setEditMode("sensor")}
+                  style={{
+                    padding: "6px 12px",
+                    borderRadius: 4,
+                    border:
+                      editMode === "sensor"
+                        ? "1px solid #007bff"
+                        : "1px solid #ddd",
+                    background: editMode === "sensor" ? "#e9f2ff" : "white",
+                    cursor: "pointer",
+                  }}
+                >
+                  Sensor
+                </button>
+              </div>
+            </div>
+
+            {editMode === "service" && (
+              <div style={{ marginBottom: 16 }}>
+                <label
+                  style={{
+                    display: "block",
+                    marginBottom: 8,
+                    fontWeight: "bold",
+                  }}
+                >
+                  Service
+                </label>
+                <select
+                  value={editingSlot.service_id || ""}
+                  onChange={(e) =>
+                    setEditingSlot({
+                      ...editingSlot,
+                      service_id: e.target.value
+                        ? parseInt(e.target.value)
+                        : null,
+                    })
+                  }
+                  style={{
+                    width: "100%",
+                    padding: 8,
+                    border: "1px solid #ddd",
+                    borderRadius: 4,
+                  }}
+                >
+                  <option value="">No Service</option>
+                  {services.map((service) => (
+                    <option key={service.service_id} value={service.service_id}>
+                      {service.vehicle_type} - ₱{service.first_2_hrs} (first
+                      2hrs)
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {editMode === "sensor" && (
+              <div style={{ marginBottom: 16 }}>
+                <label
+                  style={{
+                    display: "block",
+                    marginBottom: 8,
+                    fontWeight: "bold",
+                  }}
+                >
+                  Sensor
+                </label>
+                <select
+                  value={editingSlot.sensor_id || ""}
+                  onChange={(e) =>
+                    setEditingSlot({
+                      ...editingSlot,
+                      sensor_id: e.target.value
+                        ? parseInt(e.target.value)
+                        : null,
+                    })
+                  }
+                  style={{
+                    width: "100%",
+                    padding: 8,
+                    border: "1px solid #ddd",
+                    borderRadius: 4,
+                  }}
+                >
+                  <option value="">No Sensor</option>
+                  {sensors.map((sensor) => (
+                    <option key={sensor.sensor_id} value={sensor.sensor_id}>
+                      #{sensor.sensor_id} - {sensor.sensor_type} (
+                      {sensor.status})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div
+              style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}
+            >
+              <button
+                onClick={() => setEditingSlot(null)}
+                style={{
+                  padding: "6px 10px",
+                  borderRadius: 4,
+                  border: "1px solid #ddd",
+                  background: "white",
+                  cursor: "pointer",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  const updates = {};
+                  if (editMode === "service") {
+                    updates.service_id = editingSlot.service_id;
+                  } else {
+                    updates.sensor_id = editingSlot.sensor_id;
+                  }
+                  updateSlot(editingSlot.slot_id, updates);
+                }}
+                style={{
+                  padding: "6px 10px",
+                  borderRadius: 4,
+                  border: "none",
+                  background: "#007bff",
+                  color: "white",
+                  cursor: "pointer",
+                }}
+              >
+                Update
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

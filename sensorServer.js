@@ -38,140 +38,164 @@ const httpsAgent = new https.Agent({
 });
 
 // Dynamic sensor mapping
-let sensorMapping = new Map(); // IP -> { sensor1Id, sensor2Id, location }
+let sensorMapping = new Map(); // IP -> { arduinoId, sensor1Id, sensor2Id, location }
 let latestData = { sensor1In: null, sensor2In: null };
 
-// Add this state near the other state variables
-let expectNext = 1; // 1 => SENSOR_ID1, 2 => SENSOR_ID2
+// Enhanced state tracking for multiple devices
+let deviceStates = new Map(); // arduinoId -> { expectNext, lastPlainAt, sensor1Id, sensor2Id }
 let lastPlainAt = 0;
 const SEQ_RESET_MS = 2000; // reset alternation if gap > 2s
 
-// Fetch sensor mapping from database
-async function fetchSensorMapping() {
-  try {
-    const url = new URL(`${BACKEND_URL}/api/arduino`);
-    const options = {
+// Utility function to make HTTP requests
+function makeHttpRequest(url, options = {}) {
+  return new Promise((resolve, reject) => {
+    const isHttps = url.protocol === "https:";
+    const transport = isHttps ? https : http;
+    const agent = isHttps ? httpsAgent : httpAgent;
+
+    const requestOptions = {
       method: "GET",
       headers: {
         "Content-Type": "application/json",
         Connection: "keep-alive",
       },
-      agent: httpAgent,
+      agent,
+      ...options,
     };
 
-    const transport = http;
     const started = Date.now();
+    const req = transport.request(url, requestOptions, (res) => {
+      let data = "";
+      res.on("data", (chunk) => (data += chunk));
+      res.on("end", () => {
+        const duration = Date.now() - started;
+        try {
+          const response = JSON.parse(data);
+          resolve({ response, statusCode: res.statusCode, duration });
+        } catch (e) {
+          reject(new Error(`Failed to parse response: ${e.message}`));
+        }
+      });
+    });
 
-    return new Promise((resolve, reject) => {
-      const req = transport.request(url, options, (res) => {
-        let data = "";
-        res.on("data", (chunk) => (data += chunk));
-        res.on("end", () => {
-          const dur = Date.now() - started;
-          try {
-            const response = JSON.parse(data);
-            if (response.success && response.data) {
-              // Process Arduino devices and their sensors
-              const mapping = new Map();
+    req.setTimeout(5000, () => {
+      req.destroy(new Error("Request timeout"));
+      reject(new Error("Request timeout"));
+    });
 
-              response.data.forEach(async (arduino) => {
-                try {
-                  // Get sensors for this Arduino
-                  const sensorUrl = new URL(
-                    `${BACKEND_URL}/api/arduino/${arduino.arduino_id}/sensors`
-                  );
-                  const sensorReq = transport.request(
-                    sensorUrl,
-                    options,
-                    (sensorRes) => {
-                      let sensorData = "";
-                      sensorRes.on("data", (chunk) => (sensorData += chunk));
-                      sensorRes.on("end", () => {
-                        try {
-                          const sensorResponse = JSON.parse(sensorData);
-                          if (sensorResponse.success && sensorResponse.data) {
-                            const sensors = sensorResponse.data;
-                            const sensor1 = sensors.find(
-                              (s) => s.sensor_type === "ultrasonic"
-                            );
-                            const sensor2 = sensors.find(
-                              (s) =>
-                                s.sensor_type === "ultrasonic" &&
-                                s.sensor_id !== sensor1?.sensor_id
-                            );
+    req.on("error", (e) => {
+      reject(new Error(`Request error: ${e.message}`));
+    });
 
-                            mapping.set(arduino.ip_address, {
-                              arduinoId: arduino.arduino_id,
-                              location: arduino.location,
-                              sensor1Id: sensor1?.sensor_id || null,
-                              sensor2Id: sensor2?.sensor_id || null,
-                            });
+    req.end();
+  });
+}
 
-                            console.log(
-                              `📡 Mapped ${arduino.location} (${arduino.ip_address}): Sensor1=${sensor1?.sensor_id}, Sensor2=${sensor2?.sensor_id}`
-                            );
-                          }
-                        } catch (e) {
-                          console.error(
-                            `Error parsing sensor data for ${arduino.ip_address}:`,
-                            e.message
-                          );
-                        }
-                      });
-                    }
-                  );
+// Fetch sensor mapping from database with improved error handling
+async function fetchSensorMapping() {
+  try {
+    console.log("🔄 Fetching sensor mapping from database...");
 
-                  sensorReq.on("error", (e) => {
-                    console.error(
-                      `Error fetching sensors for ${arduino.ip_address}:`,
-                      e.message
-                    );
-                  });
+    // Get all Arduino devices
+    const arduinoUrl = new URL(`${BACKEND_URL}/api/arduino`);
+    const {
+      response: arduinoResponse,
+      statusCode,
+      duration,
+    } = await makeHttpRequest(arduinoUrl);
 
-                  sensorReq.end();
-                } catch (e) {
-                  console.error(
-                    `Error processing Arduino ${arduino.ip_address}:`,
-                    e.message
-                  );
-                }
+    console.log(
+      `[BACKEND ${statusCode} in ${duration}ms] Fetched Arduino devices`
+    );
+
+    if (!arduinoResponse.success || !arduinoResponse.data) {
+      console.log("❌ Failed to fetch Arduino devices from backend");
+      return new Map();
+    }
+
+    const mapping = new Map();
+    const sensorPromises = [];
+
+    // Process each Arduino device
+    for (const arduino of arduinoResponse.data) {
+      const sensorPromise = (async () => {
+        try {
+          // Get sensors for this Arduino
+          const sensorUrl = new URL(
+            `${BACKEND_URL}/api/arduino/${arduino.arduino_id}/sensors`
+          );
+          const { response: sensorResponse } = await makeHttpRequest(sensorUrl);
+
+          if (sensorResponse.success && sensorResponse.data) {
+            const sensors = sensorResponse.data;
+            const ultrasonicSensors = sensors.filter(
+              (s) => s.sensor_type === "ultrasonic"
+            );
+
+            if (ultrasonicSensors.length >= 2) {
+              const sensor1 = ultrasonicSensors[0];
+              const sensor2 = ultrasonicSensors[1];
+
+              mapping.set(arduino.ip_address, {
+                arduinoId: arduino.arduino_id,
+                location: arduino.location,
+                sensor1Id: sensor1.sensor_id,
+                sensor2Id: sensor2.sensor_id,
               });
 
-              // Wait a bit for all sensor requests to complete
-              setTimeout(() => {
-                sensorMapping = mapping;
-                console.log(
-                  `✅ Sensor mapping updated: ${mapping.size} devices mapped`
-                );
-                resolve(mapping);
-              }, 1000);
-            } else {
+              // Initialize device state
+              deviceStates.set(arduino.arduino_id, {
+                expectNext: 1,
+                lastPlainAt: 0,
+                sensor1Id: sensor1.sensor_id,
+                sensor2Id: sensor2.sensor_id,
+              });
+
               console.log(
-                `[BACKEND ${res.statusCode} in ${dur}ms] Failed to fetch Arduino devices`
+                `📡 Mapped ${arduino.location} (${arduino.ip_address}): Sensor1=${sensor1.sensor_id}, Sensor2=${sensor2.sensor_id}`
               );
-              resolve(new Map());
+            } else if (ultrasonicSensors.length === 1) {
+              const sensor1 = ultrasonicSensors[0];
+
+              mapping.set(arduino.ip_address, {
+                arduinoId: arduino.arduino_id,
+                location: arduino.location,
+                sensor1Id: sensor1.sensor_id,
+                sensor2Id: null,
+              });
+
+              deviceStates.set(arduino.arduino_id, {
+                expectNext: 1,
+                lastPlainAt: 0,
+                sensor1Id: sensor1.sensor_id,
+                sensor2Id: null,
+              });
+
+              console.log(
+                `📡 Mapped ${arduino.location} (${arduino.ip_address}): Sensor1=${sensor1.sensor_id} (single sensor)`
+              );
             }
-          } catch (e) {
-            console.error("Error parsing Arduino data:", e.message);
-            resolve(new Map());
           }
-        });
-      });
+        } catch (error) {
+          console.error(
+            `❌ Error fetching sensors for Arduino ${arduino.arduino_id}:`,
+            error.message
+          );
+        }
+      })();
 
-      req.setTimeout(5000, () => {
-        req.destroy(new Error("timeout"));
-        resolve(new Map());
-      });
+      sensorPromises.push(sensorPromise);
+    }
 
-      req.on("error", (e) => {
-        console.error("Error fetching Arduino devices:", e.message);
-        resolve(new Map());
-      });
+    // Wait for all sensor requests to complete
+    await Promise.all(sensorPromises);
 
-      req.end();
-    });
-  } catch (e) {
-    console.error("Failed to fetch sensor mapping:", e.message);
+    sensorMapping = mapping;
+    console.log(`✅ Sensor mapping updated: ${mapping.size} devices mapped`);
+
+    return mapping;
+  } catch (error) {
+    console.error("❌ Failed to fetch sensor mapping:", error.message);
     return new Map();
   }
 }
@@ -179,43 +203,41 @@ async function fetchSensorMapping() {
 // List available ports (debug)
 SerialPort.list()
   .then((ports) => {
-    console.log("Available ports:");
-    ports.forEach((p) => console.log(p.path));
+    console.log("🔌 Available ports:");
+    ports.forEach((p) =>
+      console.log(`  - ${p.path} (${p.manufacturer || "Unknown"})`)
+    );
   })
-  .catch((err) => console.error("Error listing ports:", err));
+  .catch((err) => console.error("❌ Error listing ports:", err));
 
-// Configure serial port
-const serialPort = new SerialPort(
-  { path: COM_PORT, baudRate: BAUD_RATE },
-  (err) => {
-    if (err) {
-      console.error("Failed to open serial port:", err.message);
-      return;
+// Configure serial port with better error handling
+let serialPort;
+let parser;
+
+try {
+  serialPort = new SerialPort(
+    { path: COM_PORT, baudRate: BAUD_RATE },
+    (err) => {
+      if (err) {
+        console.error(
+          `❌ Failed to open serial port ${COM_PORT}:`,
+          err.message
+        );
+        console.log(
+          "💡 Make sure the device is connected and the port is correct"
+        );
+        return;
+      }
+      console.log(`✅ Serial port ${COM_PORT} opened @ ${BAUD_RATE} baud`);
+      setTimeout(() => console.log("🚀 Ready to receive data"), 2000);
     }
-    console.log(`Serial port ${COM_PORT} opened @ ${BAUD_RATE} baud`);
-    setTimeout(() => console.log("Ready to receive data"), 2000);
-  }
-);
-
-const parser = serialPort.pipe(new ReadlineParser({ delimiter: "\n" }));
-
-// Add this after the serial port configuration
-serialPort.on("open", () => {
-  console.log(
-    `✅ Serial port ${COM_PORT} opened successfully @ ${BAUD_RATE} baud`
   );
-  console.log(" Waiting for data from ESP8266...");
-});
 
-serialPort.on("data", (data) => {
-  console.log(`📡 Raw data received: "${data.toString()}"`);
-});
-
-// Add this to see if there are any connection errors
-serialPort.on("error", (error) => {
-  console.error(`❌ Serial port error: ${error.message}`);
-  console.error(`❌ Make sure ESP8266 is connected to ${COM_PORT}`);
-});
+  parser = serialPort.pipe(new ReadlineParser({ delimiter: "\n" }));
+} catch (error) {
+  console.error("❌ Error initializing serial port:", error.message);
+  process.exit(1);
+}
 
 // Per-sensor rate limiting
 const lastSentValue = {};
@@ -223,62 +245,53 @@ const lastSentAt = {};
 const MIN_INTERVAL_MS = 300; // faster sending
 const MIN_CHANGE = 1; // ignore +/-1 cm noise
 
-function putSensorRange(sensorId, rangeIn) {
+// Enhanced sensor range update function
+async function putSensorRange(sensorId, rangeIn) {
   try {
-    const url = new URL(`${BACKEND_URL}/api/sensor/${sensorId}`);
-    const body = JSON.stringify({ sensor_range: rangeIn, status: "working" });
+    // Validate sensor range
+    if (typeof rangeIn !== "number" || rangeIn < 0 || rangeIn > 1000) {
+      console.warn(
+        `⚠️ Invalid sensor range for sensor ${sensorId}: ${rangeIn}`
+      );
+      return;
+    }
 
-    const isHttps = url.protocol === "https:";
-    const options = {
+    const url = new URL(`${BACKEND_URL}/api/sensor/${sensorId}`);
+    const body = JSON.stringify({
+      sensor_range: Math.round(rangeIn),
+      status: rangeIn > 0 ? "working" : "maintenance",
+    });
+
+    const { response, statusCode, duration } = await makeHttpRequest(url, {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
         "Content-Length": Buffer.byteLength(body),
-        Connection: "keep-alive",
       },
-      agent: isHttps ? httpsAgent : httpAgent,
-    };
-
-    const transport = isHttps ? https : http;
-    const started = Date.now();
-
-    const req = transport.request(url, options, (res) => {
-      let data = "";
-      res.on("data", (chunk) => (data += chunk));
-      res.on("end", () => {
-        const dur = Date.now() - started;
-        let msg = data || res.statusCode;
-        try {
-          const j = JSON.parse(data || "{}");
-          msg = j.message || data || res.statusCode;
-        } catch {}
-        console.log(
-          `[BACKEND ${res.statusCode} in ${dur}ms] sensor_id=${sensorId} -> ${msg}`
-        );
-      });
     });
 
-    req.setTimeout(1500, () => {
-      req.destroy(new Error("timeout"));
-    });
-
-    req.on("error", (e) =>
-      console.error(`Backend request error (sensor_id=${sensorId}):`, e.message)
+    let message = response?.message || `Status: ${statusCode}`;
+    console.log(
+      `[BACKEND ${statusCode} in ${duration}ms] sensor_id=${sensorId} -> ${message}`
     );
-    req.write(body);
-    req.end();
-  } catch (e) {
-    console.error("Failed to send update:", e.message);
+  } catch (error) {
+    console.error(
+      `❌ Backend request error (sensor_id=${sensorId}):`,
+      error.message
+    );
   }
 }
 
+// Rate limiting function
 function maybeSend(sensorId, rangeIn) {
   if (!sensorId) return;
+
   const now = Date.now();
   const prev = lastSentValue[sensorId];
   const changedEnough =
     prev === undefined || Math.abs(rangeIn - prev) >= MIN_CHANGE;
   const intervalOk = now - (lastSentAt[sensorId] || 0) >= MIN_INTERVAL_MS;
+
   if (changedEnough && intervalOk) {
     lastSentValue[sensorId] = rangeIn;
     lastSentAt[sensorId] = now;
@@ -286,22 +299,35 @@ function maybeSend(sensorId, rangeIn) {
   }
 }
 
-// Enhanced sensor ID detection with database mapping
-function getSensorIdForValue(value, sourceIp = null) {
+// Enhanced sensor ID detection with proper device handling
+function getSensorIdForValue(value, arduinoId = null) {
   // If we have database mapping, use it
   if (AUTO_DETECT_SENSORS && sensorMapping.size > 0) {
-    // Try to find the Arduino device that might be sending this data
-    // For now, we'll use a simple round-robin approach
+    // If arduinoId is provided, use that device's state
+    if (arduinoId && deviceStates.has(arduinoId)) {
+      const deviceState = deviceStates.get(arduinoId);
+      if (deviceState.expectNext === 1 && deviceState.sensor1Id) {
+        return deviceState.sensor1Id;
+      } else if (deviceState.expectNext === 2 && deviceState.sensor2Id) {
+        return deviceState.sensor2Id;
+      } else if (deviceState.sensor1Id) {
+        return deviceState.sensor1Id; // Fallback to sensor1
+      }
+    }
+
+    // Fallback to first available device
     const devices = Array.from(sensorMapping.values());
     if (devices.length > 0) {
-      // Use expectNext to alternate between sensors
-      const device = devices[0]; // Use first device for now
-      if (expectNext === 1 && device.sensor1Id) {
-        return device.sensor1Id;
-      } else if (expectNext === 2 && device.sensor2Id) {
-        return device.sensor2Id;
-      } else if (device.sensor1Id) {
-        return device.sensor1Id; // Fallback to sensor1
+      const device = devices[0];
+      const deviceState = deviceStates.get(device.arduinoId);
+      if (deviceState) {
+        if (deviceState.expectNext === 1 && deviceState.sensor1Id) {
+          return deviceState.sensor1Id;
+        } else if (deviceState.expectNext === 2 && deviceState.sensor2Id) {
+          return deviceState.sensor2Id;
+        } else if (deviceState.sensor1Id) {
+          return deviceState.sensor1Id;
+        }
       }
     }
   }
@@ -317,27 +343,37 @@ function getSensorIdForValue(value, sourceIp = null) {
   }
 }
 
-// Parse incoming serial lines (enhanced with database integration)
+// Update device state after sensor reading
+function updateDeviceState(arduinoId, sensorId) {
+  if (!AUTO_DETECT_SENSORS || !deviceStates.has(arduinoId)) return;
+
+  const deviceState = deviceStates.get(arduinoId);
+  if (deviceState.sensor1Id === sensorId) {
+    deviceState.expectNext = deviceState.sensor2Id ? 2 : 1;
+  } else if (deviceState.sensor2Id === sensorId) {
+    deviceState.expectNext = 1;
+  }
+}
+
+// Enhanced data parser with better error handling
 parser.on("data", (data) => {
   try {
-    const raw = String(data || "");
-    const cleaned = raw.trim();
-
-    // Add debug logging
-    console.log(`📡 Raw serial data received: "${raw}"`);
-    console.log(`📡 Cleaned data: "${cleaned}"`);
+    const raw = String(data || "").trim();
+    if (!raw) return;
 
     // Optional S1:/S2: override (still supported)
     let targetOverride = null;
-    const m = cleaned.match(/^\s*S([12])\s*:\s*(.+)$/i);
-    const payload = m ? m[2].trim() : cleaned;
+    let arduinoId = null;
+    const m = raw.match(/^\s*S([12])\s*:\s*(.+)$/i);
+    const payload = m ? m[2].trim() : raw;
+
     if (m) {
-      console.log(`📡 Found S1/S2 override: S${m[1]} = ${payload}`);
       // Use database mapping for S1/S2 override
       if (AUTO_DETECT_SENSORS && sensorMapping.size > 0) {
         const devices = Array.from(sensorMapping.values());
         if (devices.length > 0) {
-          const device = devices[0];
+          const device = devices[0]; // Use first device for override
+          arduinoId = device.arduinoId;
           targetOverride = m[1] === "1" ? device.sensor1Id : device.sensor2Id;
         }
       } else {
@@ -352,45 +388,59 @@ parser.on("data", (data) => {
     if (
       /^arduino ready|^waiting for|^received command|^error:/i.test(payload)
     ) {
-      console.log(`📡 Ignoring status line: "${payload}"`);
       return;
     }
 
     // Case 1: plain number → route to appropriate sensor
     if (/^\d+(\.\d+)?$/.test(payload)) {
       const valueIn = Math.round(Number(payload));
-      console.log(`📡 Processing plain number: ${valueIn}`);
-
-      // reset alternation if long gap between plain numbers
       const now = Date.now();
-      if (now - lastPlainAt > SEQ_RESET_MS) expectNext = 1;
+
+      // Reset alternation if long gap between plain numbers
+      if (now - lastPlainAt > SEQ_RESET_MS) {
+        if (AUTO_DETECT_SENSORS) {
+          // Reset all device states
+          deviceStates.forEach((state) => {
+            state.expectNext = 1;
+          });
+        } else {
+          expectNext = 1;
+        }
+      }
       lastPlainAt = now;
 
       let targetId = targetOverride;
       if (!targetId) {
-        targetId = getSensorIdForValue(valueIn);
-        // Toggle expectNext for next reading
-        if (AUTO_DETECT_SENSORS && sensorMapping.size > 0) {
-          const devices = Array.from(sensorMapping.values());
-          if (devices.length > 0) {
-            const device = devices[0];
-            expectNext = expectNext === 1 && device.sensor2Id ? 2 : 1;
-          }
-        } else {
+        targetId = getSensorIdForValue(valueIn, arduinoId);
+
+        // Update device state for next reading
+        if (targetId && arduinoId) {
+          updateDeviceState(arduinoId, targetId);
+        } else if (targetId && !AUTO_DETECT_SENSORS) {
           expectNext = expectNext === 1 ? 2 : 1;
         }
       }
 
       // Update latest data
       if (targetId) {
-        if (expectNext === 1) {
-          latestData.sensor1In = valueIn;
+        const deviceState = arduinoId ? deviceStates.get(arduinoId) : null;
+        if (deviceState) {
+          if (targetId === deviceState.sensor1Id) {
+            latestData.sensor1In = valueIn;
+          } else if (targetId === deviceState.sensor2Id) {
+            latestData.sensor2In = valueIn;
+          }
         } else {
-          latestData.sensor2In = valueIn;
+          // Legacy mode
+          if (expectNext === 1) {
+            latestData.sensor1In = valueIn;
+          } else {
+            latestData.sensor2In = valueIn;
+          }
         }
       }
 
-      console.log(`Ultrasonic(in) sensor_id=${targetId}:`, valueIn);
+      console.log(`📡 Ultrasonic sensor_id=${targetId}: ${valueIn}cm`);
       maybeSend(targetId, valueIn);
       return;
     }
@@ -400,14 +450,17 @@ parser.on("data", (data) => {
     if (dm) {
       const which = dm[1] === "1" ? 1 : 2;
       const num = Math.round(Number(dm[2]));
-      console.log(`📡 Processing DISTANCE${which}: ${num}`);
 
       let targetId = null;
       if (AUTO_DETECT_SENSORS && sensorMapping.size > 0) {
         const devices = Array.from(sensorMapping.values());
         if (devices.length > 0) {
           const device = devices[0];
-          targetId = which === 1 ? device.sensor1Id : device.sensor2Id;
+          const deviceState = deviceStates.get(device.arduinoId);
+          if (deviceState) {
+            targetId =
+              which === 1 ? deviceState.sensor1Id : deviceState.sensor2Id;
+          }
         }
       } else {
         // Legacy mode
@@ -419,7 +472,7 @@ parser.on("data", (data) => {
       if (targetId) {
         if (which === 1) latestData.sensor1In = num;
         if (which === 2) latestData.sensor2In = num;
-        console.log(`Ultrasonic(in) sensor_id=${targetId}:`, num);
+        console.log(`📡 Ultrasonic sensor_id=${targetId}: ${num}cm`);
         maybeSend(targetId, num);
       }
       return;
@@ -432,21 +485,27 @@ parser.on("data", (data) => {
     if (dm) {
       const n1 = Math.round(Number(dm[1]));
       const n2 = Math.round(Number(dm[2]));
-      console.log(`📡 Processing DISTANCES: S1=${n1}, S2=${n2}`);
 
       if (AUTO_DETECT_SENSORS && sensorMapping.size > 0) {
         const devices = Array.from(sensorMapping.values());
         if (devices.length > 0) {
           const device = devices[0];
-          if (device.sensor1Id) {
-            latestData.sensor1In = n1;
-            console.log(`Ultrasonic(in) sensor_id=${device.sensor1Id}:`, n1);
-            maybeSend(device.sensor1Id, n1);
-          }
-          if (device.sensor2Id) {
-            latestData.sensor2In = n2;
-            console.log(`Ultrasonic(in) sensor_id=${device.sensor2Id}:`, n2);
-            maybeSend(device.sensor2Id, n2);
+          const deviceState = deviceStates.get(device.arduinoId);
+          if (deviceState) {
+            if (deviceState.sensor1Id) {
+              latestData.sensor1In = n1;
+              console.log(
+                `📡 Ultrasonic sensor_id=${deviceState.sensor1Id}: ${n1}cm`
+              );
+              maybeSend(deviceState.sensor1Id, n1);
+            }
+            if (deviceState.sensor2Id) {
+              latestData.sensor2In = n2;
+              console.log(
+                `📡 Ultrasonic sensor_id=${deviceState.sensor2Id}: ${n2}cm`
+              );
+              maybeSend(deviceState.sensor2Id, n2);
+            }
           }
         }
       } else {
@@ -456,12 +515,12 @@ parser.on("data", (data) => {
 
         if (SENSOR_ID1) {
           latestData.sensor1In = n1;
-          console.log(`Ultrasonic(in) sensor_id=${SENSOR_ID1}:`, n1);
+          console.log(`📡 Ultrasonic sensor_id=${SENSOR_ID1}: ${n1}cm`);
           maybeSend(SENSOR_ID1, n1);
         }
         if (SENSOR_ID2) {
           latestData.sensor2In = n2;
-          console.log(`Ultrasonic(in) sensor_id=${SENSOR_ID2}:`, n2);
+          console.log(`📡 Ultrasonic sensor_id=${SENSOR_ID2}: ${n2}cm`);
           maybeSend(SENSOR_ID2, n2);
         }
       }
@@ -470,60 +529,92 @@ parser.on("data", (data) => {
 
     // Case 2: JSON → existing key-based routing (only if looks like JSON)
     if (/^[\[{]/.test(payload)) {
-      console.log(`📡 Processing JSON: ${payload}`);
-      const parsed = JSON.parse(payload);
-      console.log(`📡 Parsed JSON:`, parsed);
-      for (const [key, val] of Object.entries(parsed)) {
-        if (val == null || !isFinite(val)) continue;
-        const valueIn = Math.round(Number(val));
-        const targetId = getSensorIdForValue(valueIn);
+      try {
+        const parsed = JSON.parse(payload);
+        for (const [key, val] of Object.entries(parsed)) {
+          if (val == null || !isFinite(val)) continue;
+          const valueIn = Math.round(Number(val));
+          const targetId = getSensorIdForValue(valueIn, arduinoId);
 
-        if (targetId) {
-          if (expectNext === 1) {
-            latestData.sensor1In = valueIn;
-          } else {
-            latestData.sensor2In = valueIn;
+          if (targetId) {
+            const deviceState = arduinoId ? deviceStates.get(arduinoId) : null;
+            if (deviceState) {
+              if (targetId === deviceState.sensor1Id) {
+                latestData.sensor1In = valueIn;
+              } else if (targetId === deviceState.sensor2Id) {
+                latestData.sensor2In = valueIn;
+              }
+            } else {
+              if (expectNext === 1) {
+                latestData.sensor1In = valueIn;
+              } else {
+                latestData.sensor2In = valueIn;
+              }
+            }
+
+            console.log(`📡 Ultrasonic sensor_id=${targetId}: ${valueIn}cm`);
+            maybeSend(targetId, valueIn);
           }
-
-          console.log(`Ultrasonic(in) sensor_id=${targetId}:`, valueIn);
-          maybeSend(targetId, valueIn);
         }
+      } catch (jsonError) {
+        console.warn(`⚠️ JSON parse error: ${jsonError.message}`);
       }
       return;
     }
 
-    // Unknown/unhandled line → ignore quietly to avoid noise
-    console.log(`📡 Unknown/unhandled line: "${payload}"`);
+    // Unknown/unhandled line → log for debugging but don't spam
+    if (payload.length > 0 && !/^\s*$/.test(payload)) {
+      console.log(`📝 Unhandled data: ${payload}`);
+    }
   } catch (error) {
-    // Only log true parsing errors we expected (e.g., malformed JSON we tried to parse)
-    console.error("Parse error:", error.message);
+    console.error("❌ Parse error:", error.message);
   }
 });
 
 serialPort.on("error", (error) => {
-  console.error("Serial port error:", error.message);
+  console.error("❌ Serial port error:", error.message);
 });
 
 // Local endpoint to view last readings
 app.get("/api/sensor", (_req, res) => {
-  res.json(latestData);
+  res.json({
+    success: true,
+    data: latestData,
+    mapping: Object.fromEntries(sensorMapping),
+    timestamp: new Date().toISOString(),
+  });
 });
 
 // Local endpoint to refresh sensor mapping
 app.get("/api/refresh-mapping", async (_req, res) => {
   try {
-    await fetchSensorMapping();
+    const mapping = await fetchSensorMapping();
     res.json({
       success: true,
       message: "Sensor mapping refreshed",
-      mapping: Object.fromEntries(sensorMapping),
+      mapping: Object.fromEntries(mapping),
+      timestamp: new Date().toISOString(),
     });
   } catch (error) {
     res.status(500).json({
       success: false,
       error: error.message,
+      timestamp: new Date().toISOString(),
     });
   }
+});
+
+// Health check endpoint
+app.get("/health", (_req, res) => {
+  res.json({
+    success: true,
+    status: "healthy",
+    port: COM_PORT,
+    baudRate: BAUD_RATE,
+    autoDetect: AUTO_DETECT_SENSORS,
+    backendUrl: BACKEND_URL,
+    timestamp: new Date().toISOString(),
+  });
 });
 
 // Initialize sensor mapping on startup
@@ -541,15 +632,46 @@ if (AUTO_DETECT_SENSORS) {
     fetchSensorMapping();
   }, 5 * 60 * 1000);
 } else {
-  console.log(" Legacy mode - using environment variables for sensor IDs");
+  console.log("⚠️ Legacy mode - using environment variables for sensor IDs");
+  const SENSOR_ID1 = parseInt(process.env.SENSOR_ID1 || "0", 10);
+  const SENSOR_ID2 = parseInt(process.env.SENSOR_ID2 || "0", 10);
+  console.log(`⚙️ Using SENSOR_ID1=${SENSOR_ID1}, SENSOR_ID2=${SENSOR_ID2}`);
 }
 
 app.listen(localApiPort, () => {
-  console.log(`Local sensor server on http://localhost:${localApiPort}`);
+  console.log(
+    `🚀 Local sensor server running on http://localhost:${localApiPort}`
+  );
   if (AUTO_DETECT_SENSORS) {
-    console.log(`Auto-detection enabled - will map sensors from database`);
+    console.log(`🔄 Auto-detection enabled - will map sensors from database`);
   } else {
-    console.log(`Legacy mode - using SENSOR_ID1 and SENSOR_ID2 from .env`);
+    console.log(`⚙️ Legacy mode - using SENSOR_ID1 and SENSOR_ID2 from .env`);
   }
-  console.log(`Pushing to ${BACKEND_URL}/api/sensor/`);
+  console.log(`📡 Pushing to ${BACKEND_URL}/api/sensor/`);
+  console.log(`🔌 Serial port: ${COM_PORT} @ ${BAUD_RATE} baud`);
+});
+
+// Graceful shutdown
+process.on("SIGINT", () => {
+  console.log("\n🛑 Shutting down sensor server...");
+  if (serialPort && serialPort.isOpen) {
+    serialPort.close(() => {
+      console.log("✅ Serial port closed");
+      process.exit(0);
+    });
+  } else {
+    process.exit(0);
+  }
+});
+
+process.on("SIGTERM", () => {
+  console.log("\n🛑 Received SIGTERM, shutting down gracefully...");
+  if (serialPort && serialPort.isOpen) {
+    serialPort.close(() => {
+      console.log("✅ Serial port closed");
+      process.exit(0);
+    });
+  } else {
+    process.exit(0);
+  }
 });

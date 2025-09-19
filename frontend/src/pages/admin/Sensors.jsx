@@ -18,9 +18,6 @@ const globalAutoDetection = async () => {
 
     if (res.ok) {
       const data = await res.json();
-      console.log("ESP8266 direct response:", data);
-
-      // Parse the result string to extract distance values
       const result = data.result;
 
       if (result && result !== "TIMEOUT") {
@@ -28,7 +25,6 @@ const globalAutoDetection = async () => {
         let distance2 = null;
 
         // Parse different formats that Arduino might send
-        // Format: "DISTANCES: S1=15 IN, S2=22 IN"
         const distancesMatch = result.match(
           /DISTANCES:\s*S1=(\d+)\s*IN,\s*S2=(\d+)\s*IN/i
         );
@@ -37,129 +33,122 @@ const globalAutoDetection = async () => {
           distance2 = parseInt(distancesMatch[2]);
         }
 
-        // Format: "DISTANCE1: 15 IN"
         const distance1Match = result.match(/DISTANCE1:\s*(\d+)\s*IN/i);
         if (distance1Match) {
           distance1 = parseInt(distance1Match[1]);
         }
 
-        // Format: "DISTANCE2: 22 IN"
         const distance2Match = result.match(/DISTANCE2:\s*(\d+)\s*IN/i);
         if (distance2Match) {
-          distance2 = parseInt(distance2Match[1]);
+          distance2 = parseInt(distance2Match[2]);
         }
 
-        // Format: Plain numbers "15,22" or "15 22"
-        if (!distance1 && !distance2) {
-          const numbers = result.match(/(\d+)/g);
-          if (numbers && numbers.length >= 2) {
-            distance1 = parseInt(numbers[0]);
-            distance2 = parseInt(numbers[1]);
-          }
-        }
-
-        console.log(
-          `Parsed distances: Sensor1=${distance1}, Sensor2=${distance2}`
-        );
-
-        // Update sensors based on their data status
-        const updatePromises = [];
-
-        // Handle Sensor 1 (ID 7)
-        if (distance1 !== null && distance1 > 0) {
-          updatePromises.push(
-            fetch("/api/sensor/7", {
-              method: "PUT",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                sensor_range: distance1,
-                status: "working",
-              }),
-            })
-          );
+        // Only log if we have valid readings
+        if (distance1 !== null || distance2 !== null) {
           console.log(
-            "✅ Sensor 7 updated to 'working' - distance:",
-            distance1
+            `🌐 ESP Reading: S1=${distance1 || "N/A"}in, S2=${
+              distance2 || "N/A"
+            }in`
           );
-        } else {
-          updatePromises.push(
-            fetch("/api/sensor/7", {
-              method: "PUT",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                sensor_range: 0,
-                status: "maintenance",
-              }),
-            })
-          );
-          console.log("⚠️ Sensor 7 set to 'maintenance' - no valid data");
-        }
-
-        // Handle Sensor 2 (ID 6)
-        if (distance2 !== null && distance2 > 0) {
-          updatePromises.push(
-            fetch("/api/sensor/6", {
-              method: "PUT",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                sensor_range: distance2,
-                status: "working",
-              }),
-            })
-          );
-          console.log(
-            "✅ Sensor 6 updated to 'working' - distance:",
-            distance2
-          );
-        } else {
-          updatePromises.push(
-            fetch("/api/sensor/6", {
-              method: "PUT",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                sensor_range: 0,
-                status: "maintenance",
-              }),
-            })
-          );
-          console.log("⚠️ Sensor 6 set to 'maintenance' - no valid data");
-        }
-
-        // Execute all updates
-        if (updatePromises.length > 0) {
-          await Promise.all(updatePromises);
-          console.log("✅ Updated sensor ranges and status from ESP8266 API");
+          await updateSensorsAndParkingSlotsGlobally(distance1, distance2);
         }
       } else {
-        console.log("ESP8266 returned TIMEOUT or empty response");
-        // Set all sensors to maintenance when no data is received
-        const updatePromises = [
-          fetch("/api/sensor/7", {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              sensor_range: 0,
-              status: "maintenance",
-            }),
-          }),
-          fetch("/api/sensor/6", {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              sensor_range: 0,
-              status: "maintenance",
-            }),
-          }),
-        ];
-
-        await Promise.all(updatePromises);
-        console.log("⚠️ All sensors set to 'maintenance' - no data received");
+        console.log("🌐 ESP Response: TIMEOUT");
       }
     } else {
-      console.log(`ESP8266 API error: ${res.status} ${res.statusText}`);
+      console.log("🌐 ESP Connection: Failed");
     }
-  } catch (e) {
-    console.log("ESP8266 API fetch error:", e.message);
+  } catch (error) {
+    console.log("🌐 ESP Error:", error.message);
+  }
+};
+
+// Global function to update sensors and parking slots
+const updateSensorsAndParkingSlotsGlobally = async (distance1, distance2) => {
+  try {
+    const updatePromises = [];
+    let updatesCount = 0;
+
+    // Handle Sensor 1 (ID 7) - same logic as the working component function
+    if (distance1 !== null) {
+      const sensor1Status = distance1 > 0 ? "working" : "maintenance";
+      const sensor1Range = distance1 > 0 ? Math.round(distance1) : 0;
+
+      updatePromises.push(
+        fetch("/api/sensor/7", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sensor_range: sensor1Range,
+            status: sensor1Status,
+          }),
+        })
+          .then((response) => {
+            if (response.ok) {
+              updatesCount++;
+              console.log(
+                `✅ Sensor 7 updated to '${sensor1Status}' - distance: ${distance1}`
+              );
+            } else {
+              console.error(`❌ Failed to update Sensor 7: ${response.status}`);
+            }
+            return response;
+          })
+          .catch((error) => {
+            console.error(`❌ Error updating Sensor 7:`, error.message);
+            return null;
+          })
+      );
+    }
+
+    // Handle Sensor 2 (ID 6) - same logic as the working component function
+    if (distance2 !== null) {
+      const sensor2Status = distance2 > 0 ? "working" : "maintenance";
+      const sensor2Range = distance2 > 0 ? Math.round(distance2) : 0;
+
+      updatePromises.push(
+        fetch("/api/sensor/6", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sensor_range: sensor2Range,
+            status: sensor2Status,
+          }),
+        })
+          .then((response) => {
+            if (response.ok) {
+              updatesCount++;
+              console.log(
+                `✅ Sensor 6 updated to '${sensor2Status}' - distance: ${distance2}`
+              );
+            } else {
+              console.error(`❌ Failed to update Sensor 6: ${response.status}`);
+            }
+            return response;
+          })
+          .catch((error) => {
+            console.error(`❌ Error updating Sensor 6:`, error.message);
+            return null;
+          })
+      );
+    }
+
+    if (updatePromises.length === 0) {
+      console.log("⚠️ No sensor updates to perform");
+      return;
+    }
+
+    // Wait for all updates to complete
+    await Promise.all(updatePromises);
+
+    // Log successful updates
+    if (updatesCount > 0) {
+      console.log(`✅ Updated ${updatesCount} sensor(s) in database`);
+    } else {
+      console.log("⚠️ No sensors were successfully updated");
+    }
+  } catch (error) {
+    console.error("❌ Error updating sensors globally:", error.message);
   }
 };
 
@@ -173,26 +162,9 @@ const AdminSensors = () => {
   const [espBaseUrl, setEspBaseUrl] = useState("");
   const [esp8266Data, setEsp8266Data] = useState(null);
   const [esp8266Loading, setEsp8266Loading] = useState(false);
-
-  // New state for automatic distance detection - initialize from localStorage
-  const [autoDistanceDetection, setAutoDistanceDetection] = useState(() => {
-    try {
-      return localStorage.getItem("autoDistanceDetection") === "true";
-    } catch {
-      return false;
-    }
-  });
-
-  const [distanceDetectionInterval, setDistanceDetectionInterval] = useState(
-    () => {
-      try {
-        const saved = localStorage.getItem("distanceDetectionInterval");
-        return saved ? parseInt(saved) : 3000;
-      } catch {
-        return 3000;
-      }
-    }
-  );
+  const [autoDistanceDetection, setAutoDistanceDetection] = useState(false);
+  const [distanceDetectionInterval, setDistanceDetectionInterval] =
+    useState(3000);
 
   // New state for connected devices
   const [connectedDevices, setConnectedDevices] = useState([]);
@@ -616,16 +588,16 @@ const AdminSensors = () => {
               method: "PUT",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
-                sensor_range: 0,
                 status: "maintenance",
+                sensor_range: 0,
               }),
             }),
             fetch("/api/sensor/6", {
               method: "PUT",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
-                sensor_range: 0,
                 status: "maintenance",
+                sensor_range: 0,
               }),
             }),
           ];
@@ -1133,7 +1105,26 @@ const AdminSensors = () => {
       clearInterval(globalAutoDetectionInterval);
     }
 
-    globalEspBaseUrl = espBaseUrl;
+    // Get ESP base URL from localStorage if not set
+    if (!espBaseUrl) {
+      try {
+        const savedEspBaseUrl = localStorage.getItem("espBaseUrl");
+        if (savedEspBaseUrl) {
+          globalEspBaseUrl = savedEspBaseUrl;
+          setEspBaseUrl(savedEspBaseUrl);
+        }
+      } catch (error) {
+        console.error("Error loading ESP base URL:", error);
+      }
+    } else {
+      globalEspBaseUrl = espBaseUrl;
+    }
+
+    if (!globalEspBaseUrl) {
+      console.log("❌ Cannot start auto-detection: No ESP URL");
+      return;
+    }
+
     globalDetectionInterval = distanceDetectionInterval;
     globalAutoDetectionActive = true;
 
@@ -1143,10 +1134,12 @@ const AdminSensors = () => {
       globalDetectionInterval
     );
 
-    // Also run it immediately
+    // Run immediately
     globalAutoDetection();
 
-    console.log("🌐 Global auto-detection started");
+    console.log(
+      `🚀 Auto-detection started (${globalDetectionInterval / 1000}s interval)`
+    );
   };
 
   // Function to stop global auto-detection
@@ -1156,8 +1149,64 @@ const AdminSensors = () => {
       globalAutoDetectionInterval = null;
     }
     globalAutoDetectionActive = false;
-    console.log("🌐 Global auto-detection stopped");
+    console.log("⏹️ Auto-detection stopped");
   };
+
+  // Improved useEffect to restore global state
+  useEffect(() => {
+    // Load ESP base URL from localStorage
+    let savedEspBaseUrl = "";
+    try {
+      savedEspBaseUrl = localStorage.getItem("espBaseUrl") || "";
+      if (savedEspBaseUrl) {
+        setEspBaseUrl(savedEspBaseUrl);
+        globalEspBaseUrl = savedEspBaseUrl;
+      }
+    } catch (error) {
+      console.error("Error loading ESP base URL:", error);
+    }
+
+    // Check if auto-detection was running
+    const wasAutoDetecting =
+      localStorage.getItem("autoDistanceDetection") === "true";
+    const savedInterval = localStorage.getItem("distanceDetectionInterval");
+
+    if (wasAutoDetecting && savedEspBaseUrl) {
+      setAutoDistanceDetection(true);
+      setDistanceDetectionInterval(
+        savedInterval ? parseInt(savedInterval) : 3000
+      );
+
+      if (!globalAutoDetectionActive) {
+        startGlobalAutoDetection();
+      }
+    } else if (globalAutoDetectionActive && globalEspBaseUrl) {
+      setAutoDistanceDetection(true);
+      setEspBaseUrl(globalEspBaseUrl);
+      setDistanceDetectionInterval(globalDetectionInterval);
+      console.log("🔄 Restored auto-detection state");
+    }
+  }, []);
+
+  // Cleanup useEffect
+  useEffect(() => {
+    return () => {
+      try {
+        if (autoDistanceDetection) {
+          localStorage.setItem("autoDistanceDetection", "true");
+          localStorage.setItem(
+            "distanceDetectionInterval",
+            distanceDetectionInterval.toString()
+          );
+          if (espBaseUrl) {
+            localStorage.setItem("espBaseUrl", espBaseUrl);
+          }
+        }
+      } catch (error) {
+        console.error("Error saving state:", error);
+      }
+    };
+  }, [autoDistanceDetection, distanceDetectionInterval, espBaseUrl]);
 
   // Update the button click handler
   const handleAutoDetectionToggle = () => {
@@ -1165,7 +1214,19 @@ const AdminSensors = () => {
       stopGlobalAutoDetection();
       setAutoDistanceDetection(false);
     } else {
-      if (!espBaseUrl) {
+      let currentEspUrl = espBaseUrl;
+      if (!currentEspUrl) {
+        try {
+          currentEspUrl = localStorage.getItem("espBaseUrl");
+          if (currentEspUrl) {
+            setEspBaseUrl(currentEspUrl);
+          }
+        } catch (error) {
+          console.error("Error loading ESP base URL:", error);
+        }
+      }
+
+      if (!currentEspUrl) {
         alert("Please set ESP Base URL first");
         return;
       }
@@ -1173,15 +1234,6 @@ const AdminSensors = () => {
       startGlobalAutoDetection();
     }
   };
-
-  // Check if auto-detection is already running when component mounts
-  useEffect(() => {
-    if (globalAutoDetectionActive) {
-      setAutoDistanceDetection(true);
-      setEspBaseUrl(globalEspBaseUrl);
-      setDistanceDetectionInterval(globalDetectionInterval);
-    }
-  }, []);
 
   // Update sensors based on their data status
   const updateSensorsAndParkingSlots = async (distance1, distance2) => {

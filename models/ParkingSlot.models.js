@@ -292,7 +292,7 @@ class ParkingSlotModel {
         if (sensorData.sensor_range <= 0) {
           // No valid range data - go to maintenance
           newStatus = "maintenance";
-        } else if (sensorData.sensor_range < 3) {
+        } else if (sensorData.sensor_range < 5) {
           // Close range - occupied
           newStatus = "occupied";
         } else {
