@@ -22,6 +22,9 @@ const AdminParkingActivities = () => {
   const [endingId, setEndingId] = useState(null);
   const [endTime, setEndTime] = useState("");
 
+  const [showTicket, setShowTicket] = useState(false);
+  const [ticketInfo, setTicketInfo] = useState(null);
+
   // Add edit state variables
   const [showEdit, setShowEdit] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -44,6 +47,12 @@ const AdminParkingActivities = () => {
   const apiBase = "/api/parking-activity";
 
   const autoHide = () => setTimeout(() => setMsg(""), 2500);
+
+  const openStartForUser = (u) => {
+    setStartUserId(String(u.user_id));
+    setStartTime(toLocalInputValue(new Date()));
+    setShowStart(true);
+  };
 
   const fmt = (d) => (d ? new Date(d).toLocaleString() : "-");
   const statusOf = (a) => {
@@ -210,6 +219,15 @@ const AdminParkingActivities = () => {
         throw new Error(
           data?.message || data?.error || "Failed to start activity"
         );
+
+      const u = users.find((x) => x.user_id === Number(startUserId));
+      const startedAt =
+        data?.data?.start_time || body.start_time || new Date().toISOString();
+      setTicketInfo({
+        plate_number: u?.plate_number || "-",
+        start_time: startedAt,
+      });
+      setShowTicket(true);
 
       setMsg("Parking activity started");
       autoHide();
@@ -915,6 +933,15 @@ const AdminParkingActivities = () => {
                 >
                   Service
                 </th>
+                <th
+                  style={{
+                    textAlign: "left",
+                    borderBottom: "1px solid #ddd",
+                    padding: "8px 4px",
+                  }}
+                >
+                  Action
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -963,15 +990,21 @@ const AdminParkingActivities = () => {
                         padding: "2px 6px",
                         borderRadius: 4,
                         background:
-                          getVehicleType(u.service_id) === "car"
+                          (services.find((s) => s.service_id === u.service_id)
+                            ?.vehicle_type || "Unknown") === "car"
                             ? "#e8f5e8"
-                            : getVehicleType(u.service_id) === "bike"
+                            : (services.find(
+                                (s) => s.service_id === u.service_id
+                              )?.vehicle_type || "Unknown") === "bike"
                             ? "#fff3cd"
                             : "#f3e5f5",
                         color:
-                          getVehicleType(u.service_id) === "car"
+                          (services.find((s) => s.service_id === u.service_id)
+                            ?.vehicle_type || "Unknown") === "car"
                             ? "#155724"
-                            : getVehicleType(u.service_id) === "bike"
+                            : (services.find(
+                                (s) => s.service_id === u.service_id
+                              )?.vehicle_type || "Unknown") === "bike"
                             ? "#856404"
                             : "#7b1fa2",
                         fontSize: 12,
@@ -979,8 +1012,31 @@ const AdminParkingActivities = () => {
                         textTransform: "capitalize",
                       }}
                     >
-                      {getVehicleType(u.service_id)}
+                      {services.find((s) => s.service_id === u.service_id)
+                        ?.vehicle_type || "Unknown"}
                     </span>
+                  </td>
+                  <td
+                    style={{
+                      borderBottom: "1px solid #f0f0f0",
+                      padding: "6px 4px",
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => openStartForUser(u)}
+                      style={{
+                        fontSize: 12,
+                        padding: "4px 8px",
+                        background: "#28a745",
+                        color: "white",
+                        border: "none",
+                        borderRadius: 4,
+                        cursor: "pointer",
+                      }}
+                    >
+                      Start
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -1316,6 +1372,49 @@ const AdminParkingActivities = () => {
 
   const StartModal = () => {
     if (!showStart) return null;
+
+    const selectedUser = users.find((u) => u.user_id === Number(startUserId));
+    const previewPlate = selectedUser?.plate_number || "-";
+    const previewStartISO = startTime
+      ? new Date(startTime).toISOString()
+      : new Date().toISOString();
+
+    const handlePrint = () => {
+      const win = window.open("", "PRINT", "height=600,width=400");
+      if (!win) return;
+      const startLocal = new Date(previewStartISO).toLocaleString();
+      win.document.write(`
+        <html>
+          <head>
+            <title>Parking Ticket</title>
+            <style>
+              body { font-family: Arial, sans-serif; padding: 16px; }
+              .ticket { border: 1px dashed #333; padding: 16px; }
+              .h { font-weight: bold; margin-bottom: 8px; }
+              .row { margin: 6px 0; }
+              .label { color: #666; font-size: 12px; }
+              .val { font-size: 16px; font-weight: 700; }
+            </style>
+          </head>
+          <body onload="window.print(); window.close();">
+            <div class="ticket">
+              <div class="h">BZPark Ticket</div>
+              <div class="row">
+                <div class="label">PLATENUMBER:</div>
+                <div class="val">${previewPlate}</div>
+              </div>
+              <div class="row">
+                <div class="label">Start Time:</div>
+                <div class="val">${startLocal}</div>
+              </div>
+            </div>
+          </body>
+        </html>
+      `);
+      win.document.close();
+      win.focus();
+    };
+
     return (
       <div
         style={{
@@ -1333,86 +1432,170 @@ const AdminParkingActivities = () => {
             background: "white",
             padding: 24,
             borderRadius: 8,
-            minWidth: 360,
-            maxWidth: 480,
+            minWidth: 760,
+            maxWidth: 920,
           }}
         >
           <h3 style={{ margin: "0 0 16px 0" }}>Start Parking Activity</h3>
-          <div style={{ marginBottom: 16 }}>
-            <label
-              style={{ display: "block", marginBottom: 8, fontWeight: "bold" }}
-            >
-              User
-            </label>
-            <select
-              value={startUserId}
-              onChange={(e) => setStartUserId(e.target.value)}
-              style={{
-                width: "100%",
-                padding: 8,
-                border: "1px solid #ddd",
-                borderRadius: 4,
-              }}
-            >
-              <option value="">Select a user</option>
-              {users.map((u) => (
-                <option key={u.user_id} value={u.user_id}>
-                  #{u.user_id} - {u.plate_number || "-"}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div style={{ marginBottom: 16 }}>
-            <label
-              style={{ display: "block", marginBottom: 8, fontWeight: "bold" }}
-            >
-              Start Time (optional)
-            </label>
-            <input
-              type="datetime-local"
-              value={startTime}
-              onChange={(e) => setStartTime(e.target.value)}
-              style={{
-                width: "100%",
-                padding: 8,
-                border: "1px solid #ddd",
-                borderRadius: 4,
-              }}
-            />
-          </div>
-          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-            <button
-              type="button"
-              onClick={() => {
-                setShowStart(false);
-                setStartUserId("");
-                setStartTime("");
-              }}
-              style={{
-                padding: "6px 10px",
-                borderRadius: 4,
-                border: "1px solid #ddd",
-                background: "white",
-                cursor: "pointer",
-              }}
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={startActivity}
-              style={{
-                padding: "6px 10px",
-                borderRadius: 4,
-                border: "none",
-                background: "#28a745",
-                color: "white",
-                cursor: "pointer",
-              }}
-              disabled={!startUserId.trim()}
-            >
-              Start
-            </button>
+
+          <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
+            {/* Left: Start form */}
+            <div style={{ flex: 1, minWidth: 360 }}>
+              <div style={{ marginBottom: 16 }}>
+                <label
+                  style={{
+                    display: "block",
+                    marginBottom: 8,
+                    fontWeight: "bold",
+                  }}
+                >
+                  User
+                </label>
+                <select
+                  value={startUserId}
+                  onChange={(e) => setStartUserId(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: 8,
+                    border: "1px solid #ddd",
+                    borderRadius: 4,
+                  }}
+                >
+                  <option value="">Select a user</option>
+                  {users.map((u) => (
+                    <option key={u.user_id} value={u.user_id}>
+                      #{u.user_id} - {u.plate_number || "-"}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={{ marginBottom: 16 }}>
+                <label
+                  style={{
+                    display: "block",
+                    marginBottom: 8,
+                    fontWeight: "bold",
+                  }}
+                >
+                  Start Time (optional)
+                </label>
+                <input
+                  type="datetime-local"
+                  value={startTime}
+                  onChange={(e) => setStartTime(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: 8,
+                    border: "1px solid #ddd",
+                    borderRadius: 4,
+                  }}
+                />
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setStartTime(toLocalInputValue(new Date()))}
+                style={{
+                  padding: "6px 10px",
+                  borderRadius: 4,
+                  border: "1px solid #ddd",
+                  background: "white",
+                  cursor: "pointer",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                Now
+              </button>
+
+              <div
+                style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowStart(false);
+                    setStartUserId("");
+                    setStartTime("");
+                  }}
+                  style={{
+                    padding: "6px 10px",
+                    borderRadius: 4,
+                    border: "1px solid #ddd",
+                    background: "white",
+                    cursor: "pointer",
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={startActivity}
+                  style={{
+                    padding: "6px 10px",
+                    borderRadius: 4,
+                    border: "none",
+                    background: "#28a745",
+                    color: "white",
+                    cursor: "pointer",
+                  }}
+                  disabled={!startUserId.trim()}
+                >
+                  Start
+                </button>
+              </div>
+            </div>
+
+            {/* Right: Ticket Preview */}
+            <div style={{ flex: 1, minWidth: 360 }}>
+              <div
+                style={{
+                  border: "1px solid #e0e0e0",
+                  borderRadius: 8,
+                  padding: 16,
+                }}
+              >
+                <h4 style={{ margin: "0 0 12px 0" }}>Ticket Preview</h4>
+                <div
+                  style={{
+                    border: "1px dashed #333",
+                    padding: 12,
+                    marginBottom: 16,
+                  }}
+                >
+                  <div style={{ fontSize: 12, color: "#666" }}>
+                    PLATENUMBER:
+                  </div>
+                  <div style={{ fontWeight: 700 }}>{previewPlate}</div>
+                  <div style={{ height: 8 }} />
+                  <div style={{ fontSize: 12, color: "#666" }}>Start Time:</div>
+                  <div style={{ fontWeight: 700 }}>{fmt(previewStartISO)}</div>
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 8,
+                    justifyContent: "flex-end",
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={handlePrint}
+                    style={{
+                      padding: "6px 10px",
+                      borderRadius: 4,
+                      border: "none",
+                      background: "#007bff",
+                      color: "white",
+                      cursor: "pointer",
+                    }}
+                    disabled={!startUserId.trim()}
+                  >
+                    Print
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -1584,7 +1767,6 @@ const AdminParkingActivities = () => {
     );
   };
 
-  // Add Edit Modal component
   const EditModal = () => {
     if (!showEdit) return null;
     return (
@@ -1657,6 +1839,10 @@ const AdminParkingActivities = () => {
               }}
             />
           </div>
+
+          <button type="button" onClick={() => setStartTime}>
+            Now
+          </button>
 
           <div style={{ marginBottom: 16 }}>
             <label
@@ -1870,6 +2056,8 @@ const AdminParkingActivities = () => {
           {msg}
         </div>
       )}
+
+      {!loading && <UsersCards />}
 
       {loading ? (
         <div style={{ padding: 12, color: "#666" }}>Loading...</div>

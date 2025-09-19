@@ -201,10 +201,12 @@ class ParkingActivityModel {
         };
       }
 
-      // Simple approach: let MySQL handle everything
+      // Insert with optional custom start_time
       const { results } = await parkingActivityDB.query(
-        `INSERT INTO parking_activity (user_id) VALUES (?)`,
-        [user_id]
+        start_time
+          ? `INSERT INTO parking_activity (user_id, start_time) VALUES (?, ?)`
+          : `INSERT INTO parking_activity (user_id) VALUES (?)`,
+        start_time ? [user_id, start_time] : [user_id]
       );
 
       const newActivity = await this.getById(results.insertId);

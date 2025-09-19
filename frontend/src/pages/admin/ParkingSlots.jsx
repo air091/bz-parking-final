@@ -806,7 +806,7 @@ const AdminParkingSlots = () => {
         </div>
 
         <div
-          style={{
+              style={{
             display: "flex",
             gap: 8,
             alignItems: "center",
@@ -854,21 +854,21 @@ const AdminParkingSlots = () => {
               <span style={{ fontSize: 14 }}>Auto-refresh</span>
             </label>
             {autoRefresh && (
-              <select
-                value={refreshInterval}
-                onChange={(e) => setRefreshInterval(Number(e.target.value))}
-                style={{
-                  padding: "4px 8px",
+            <select
+              value={refreshInterval}
+              onChange={(e) => setRefreshInterval(Number(e.target.value))}
+              style={{
+                padding: "4px 8px",
                   border: "1px solid #ddd",
-                  borderRadius: 4,
+                borderRadius: 4,
                   fontSize: 12,
-                }}
-              >
+              }}
+            >
                 <option value={3000}>3s</option>
-                <option value={5000}>5s</option>
-                <option value={10000}>10s</option>
-                <option value={30000}>30s</option>
-              </select>
+              <option value={5000}>5s</option>
+              <option value={10000}>10s</option>
+              <option value={30000}>30s</option>
+            </select>
             )}
           </div>
         </div>
@@ -880,31 +880,31 @@ const AdminParkingSlots = () => {
       {/* Error/Message Display */}
       {(error || message) && (
         <div style={{ marginBottom: 12 }}>
-          {error && (
-            <div
-              style={{
+      {error && (
+        <div
+          style={{
                 padding: "8px 12px",
-                background: "#ffe5e5",
-                color: "#a00",
+            background: "#ffe5e5",
+            color: "#a00",
                 border: "1px solid #f5c2c7",
                 borderRadius: 6,
                 marginBottom: 6,
-              }}
-            >
-              {error}
-            </div>
-          )}
-          {message && (
-            <div
-              style={{
+          }}
+        >
+          {error}
+        </div>
+      )}
+      {message && (
+        <div
+          style={{
                 padding: "8px 12px",
-                background: "#e6ffed",
-                color: "#0a6",
+            background: "#e6ffed",
+            color: "#0a6",
                 border: "1px solid #badbcc",
                 borderRadius: 6,
-              }}
-            >
-              {message}
+          }}
+        >
+          {message}
             </div>
           )}
         </div>
@@ -959,9 +959,9 @@ const AdminParkingSlots = () => {
                 Edit Mode
               </label>
               <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-                <button
+            <button
                   onClick={() => setEditMode("service")}
-                  style={{
+              style={{
                     padding: "6px 12px",
                     borderRadius: 4,
                     border:
@@ -969,11 +969,11 @@ const AdminParkingSlots = () => {
                         ? "1px solid #007bff"
                         : "1px solid #ddd",
                     background: editMode === "service" ? "#e9f2ff" : "white",
-                    cursor: "pointer",
-                  }}
-                >
+                cursor: "pointer",
+              }}
+            >
                   Service
-                </button>
+            </button>
                 <button
                   onClick={() => setEditMode("sensor")}
                   style={{
@@ -989,8 +989,8 @@ const AdminParkingSlots = () => {
                 >
                   Sensor
                 </button>
-              </div>
-            </div>
+        </div>
+      </div>
 
             {editMode === "service" && (
               <div style={{ marginBottom: 16 }}>

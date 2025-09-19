@@ -55,6 +55,63 @@ const AdminUsers = () => {
     }
   };
 
+  // Enhanced create user function
+  const handleEnhancedCreateUser = async (e) => {
+    e.preventDefault();
+
+    if (!createForm.plateNumber.trim()) {
+      setError("Plate number is required");
+      return;
+    }
+
+    setCreateLoading(true);
+    setError("");
+    setMessage("");
+
+    try {
+      const response = await fetch("/api/user", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          plate_number: createForm.plateNumber.trim().toUpperCase(),
+          service_id: createForm.serviceId
+            ? parseInt(createForm.serviceId)
+            : null,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || data.error || "Failed to create user");
+      }
+
+      setMessage("User created successfully!");
+      setShowEnhancedCreate(false);
+      setCreateForm({
+        plateNumber: "",
+        serviceId: "",
+        vehicleType: "",
+        notes: "",
+      });
+
+      // Reload users and statistics
+      await loadUsers();
+      if (typeof loadStatistics === "function") {
+        await loadStatistics();
+      }
+
+      // Auto-hide message after 3 seconds
+      setTimeout(() => setMessage(""), 3000);
+    } catch (error) {
+      setError(error.message);
+    } finally {
+      setCreateLoading(false);
+    }
+  };
+
   const attachStream = async (stream) => {
     streamRef.current = stream;
     const video = videoRef.current;
@@ -1667,91 +1724,6 @@ const AdminUsers = () => {
                 <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
                   <button
                     type="button"
-                    onClick={async () => {
-                      try {
-                        setStartingActivity(true);
-                        setError("");
-
-                        // Step 1: Create user first
-                        const createRes = await fetch("/api/user", {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({
-                            plate_number: ocrResult.letters,
-                            service_id: null, // You might want to make this configurable
-                          }),
-                        });
-
-                        const createData = await createRes.json();
-                        if (!createRes.ok) {
-                          if (!createData.error?.includes("already exists")) {
-                            throw new Error(
-                              createData?.error || "Failed to create user"
-                            );
-                          }
-                        }
-
-                        // Get the user ID from the response
-                        const userId =
-                          createData.data?.user_id || createData.user_id;
-                        if (!userId) {
-                          throw new Error(
-                            "User created but no user ID returned"
-                          );
-                        }
-
-                        // Step 2: Start parking activity with the new user ID
-                        const activityRes = await fetch(
-                          "/api/parking-activity",
-                          {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({
-                              user_id: userId, // Use the new user ID
-                              plate_number: ocrResult.letters,
-                              activity_type: "entry",
-                            }),
-                          }
-                        );
-
-                        const activityData = await activityRes.json();
-                        if (!activityRes.ok) {
-                          throw new Error(
-                            activityData?.error || "Failed to start activity"
-                          );
-                        }
-
-                        setMessage(
-                          `User created and parking activity started for ${ocrResult.letters}`
-                        );
-                        setTimeout(() => setMessage(""), 3000);
-                        await loadUsers();
-                      } catch (e) {
-                        setError(e.message);
-                      } finally {
-                        setStartingActivity(false);
-                      }
-                    }}
-                    disabled={startingActivity}
-                    style={{
-                      flex: 1,
-                      padding: "8px 12px",
-                      borderRadius: 4,
-                      border: "none",
-                      background: "#28a745",
-                      color: "white",
-                      cursor: startingActivity ? "not-allowed" : "pointer",
-                      fontSize: 12,
-                      fontWeight: 600,
-                    }}
-                  >
-                    {startingActivity
-                      ? "Creating User & Starting Activity..."
-                      : "Create User & Start Activity"}
-                  </button>
-
-                  <button
-                    type="button"
                     onClick={() => {
                       setEnhancedCreatePlate(ocrResult.letters);
                       setShowEnhancedCreate(true);
@@ -2155,6 +2127,21 @@ const AdminUsers = () => {
               <option value={60000}>Refresh every 1m</option>
             </select>
           </div>
+
+          <button
+            onClick={() => setShowCreate(true)}
+            style={{
+              padding: "8px 16px",
+              background: "#28a745",
+              color: "white",
+              border: "none",
+              borderRadius: "4px",
+              cursor: "pointer",
+              fontWeight: 500,
+            }}
+          >
+            + Add User
+          </button>
 
           <button
             onClick={() => loadUsers(true)}
