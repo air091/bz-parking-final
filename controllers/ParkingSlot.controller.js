@@ -473,13 +473,13 @@ class ParkingSlotController {
           sensorData: {
             status: sensorData.status,
             range_in: sensorData.sensor_range,
-            threshold: "5 in",
+            threshold: "3 in",
             logic:
-              sensorData.sensor_range < 5
-                ? "occupied (< 5 in)"
-                : sensorData.sensor_range > 5
-                ? "available (> 5 in)"
-                : "maintenance (sensor in maintenance or range = 5 in)",
+              sensorData.sensor_range < 3
+                ? "occupied (< 3 in)"
+                : sensorData.sensor_range > 3
+                ? "available (> 3 in)"
+                : "maintenance (sensor in maintenance or range = 3 in)",
           },
           timestamp: new Date().toISOString(),
         });
